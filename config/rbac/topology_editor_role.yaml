@@ -1,0 +1,31 @@
+# permissions for end users to edit topologies.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: clusterrole
+    app.kubernetes.io/instance: topology-editor-role
+    app.kubernetes.io/component: rbac
+    app.kubernetes.io/created-by: meshnet
+    app.kubernetes.io/part-of: meshnet
+    app.kubernetes.io/managed-by: kustomize
+  name: topology-editor-role
+rules:
+- apiGroups:
+  - networkop.co.uk
+  resources:
+  - topologies
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - networkop.co.uk
+  resources:
+  - topologies/status
+  verbs:
+  - get

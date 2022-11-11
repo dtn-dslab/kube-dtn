@@ -1,0 +1,15 @@
+domain: networkop.co.uk
+layout:
+- go.kubebuilder.io/v3
+projectName: meshnet
+repo: networkop.co.uk/meshnet
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: networkop.co.uk
+  kind: Topology
+  path: networkop.co.uk/meshnet/api/v1beta1
+  version: v1beta1
+version: "3"
