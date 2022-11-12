@@ -6,7 +6,6 @@ require (
 	github.com/networkop/meshnet-cni v0.0.0-20221107145810-037ded81bc8b
 	github.com/onsi/ginkgo/v2 v2.1.4
 	github.com/onsi/gomega v1.19.0
-	github.com/redhat-nfvpe/koko v0.0.0-20210415181932-a18aa44814ea
 	google.golang.org/grpc v1.47.0
 	k8s.io/apimachinery v0.25.0
 	k8s.io/client-go v0.25.0
@@ -14,21 +13,8 @@ require (
 )
 
 require (
-	github.com/Microsoft/go-winio v0.4.11 // indirect
-	github.com/containernetworking/plugins v0.9.1 // indirect
-	github.com/docker/distribution v0.0.0-20181024170156-93e082742a00 // indirect
-	github.com/docker/docker v0.0.0-20181024220401-bc4c1c238b55 // indirect
-	github.com/docker/go-connections v0.0.0-20180228141015-7395e3f8aa16 // indirect
-	github.com/docker/go-units v0.4.0 // indirect
-	github.com/opencontainers/go-digest v0.0.0-20170607195333-279bed98673d // indirect
-	github.com/opencontainers/image-spec v0.0.0-20171030174740-d60099175f88 // indirect
 	github.com/sirupsen/logrus v1.8.1
-	github.com/vishvananda/netlink v1.1.1-0.20201029203352-d40f9887b852 // indirect
-	github.com/vishvananda/netns v0.0.0-20200728191858-db3c7e526aae // indirect
 	google.golang.org/genproto v0.0.0-20220714211235-042d03aeabc9 // indirect
-	k8s.io/cri-api v0.0.0-20191204094248-a6f63f369f6d // indirect
-	k8s.io/klog v1.0.0 // indirect
-	k8s.io/kubernetes v1.14.6 // indirect
 )
 
 require (

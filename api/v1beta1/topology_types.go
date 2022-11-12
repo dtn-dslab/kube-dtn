@@ -36,8 +36,6 @@ type TopologySpec struct {
 type TopologyStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
-	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata,omitempty"`
 
 	// List of pods that are skipped by local pod
 	// +optional
