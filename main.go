@@ -22,6 +22,7 @@ import (
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
+	"go.uber.org/zap/zapcore"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -57,8 +58,19 @@ func main() {
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
+	// Enable colored output for different levels
+	// https://github.com/uber-go/zap/issues/648
+	encoderOpts := []zap.EncoderConfigOption{
+		zap.EncoderConfigOption(func(config *zapcore.EncoderConfig) {
+			config.EncodeLevel = zapcore.CapitalColorLevelEncoder
+		}),
+	}
 	opts := zap.Options{
-		Development: true,
+		Development:          true,
+		EncoderConfigOptions: encoderOpts,
+		// Print human readable time,
+		// https://github.com/kubernetes-sigs/kubebuilder/issues/2606
+		TimeEncoder: zapcore.ISO8601TimeEncoder,
 	}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()

@@ -18,9 +18,9 @@ package controllers
 
 import (
 	"context"
-	"fmt"
 	"reflect"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -33,7 +33,6 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	mpb "github.com/networkop/meshnet-cni/daemon/proto/meshnet/v1beta1"
-	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -64,7 +63,11 @@ func (r *TopologyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	var topology v1beta1.Topology
 	if err := r.Get(ctx, req.NamespacedName, &topology); err != nil {
-		log.Info("Unable to fetch Topology", "error", err)
+		if apierrors.IsNotFound(err) {
+			log.Info("Topology deleted")
+		} else {
+			log.Error(err, "Unable to fetch Topology")
+		}
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
@@ -73,20 +76,21 @@ func (r *TopologyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, nil
 	}
 
-	if topology.ObjectMeta.Generation == 1 {
-		logrus.Infof("Topology %s created", topology.Name)
-		// We'll copy initial links to status later
+	if topology.Status.Links == nil {
+		log.Info("Topology created")
+		// Saw topology for the first time, assume all links in spec have been set up,
+		// we'll copy initial links to status later
 	} else {
 		add, del := r.CalcDiff(topology.Status.Links, topology.Spec.Links)
-		fmt.Printf("Topology %s changed,\n\tadd: %v,\n\tdel: %v\n", topology.Name, add, del)
+		log.Info("Topology changed", "add", add, "del", del)
 
 		if err := r.DelLinks(ctx, &topology, del); err != nil {
-			logrus.Errorf("Topology %s: Failed to update links: %s", topology.Name, err)
+			log.Error(err, "Failed to delete links")
 			return ctrl.Result{}, err
 		}
 
 		if err := r.AddLinks(ctx, &topology, add); err != nil {
-			logrus.Errorf("Topology %s: Failed to update links: %s", topology.Name, err)
+			log.Error(err, "Failed to add links")
 			return ctrl.Result{}, err
 		}
 	}
@@ -95,7 +99,11 @@ func (r *TopologyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		var topology v1beta1.Topology
 		if err := r.Get(ctx, req.NamespacedName, &topology); err != nil {
-			log.Info("Unable to fetch Topology", "error", err)
+			if apierrors.IsNotFound(err) {
+				log.Info("Topology deleted")
+			} else {
+				log.Error(err, "Unable to fetch Topology")
+			}
 			return client.IgnoreNotFound(err)
 		}
 
@@ -104,7 +112,7 @@ func (r *TopologyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	})
 
 	if err != nil {
-		logrus.Errorf("Topology %s: Failed to update status: %s", topology.Name, err)
+		log.Error(err, "Failed to update status")
 		return ctrl.Result{}, err
 	}
 
@@ -112,16 +120,19 @@ func (r *TopologyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 }
 
 func (r *TopologyReconciler) AddLinks(ctx context.Context, topology *v1beta1.Topology, links []v1beta1.Link) error {
+	log := log.FromContext(ctx)
+
 	daemonAddr := topology.Status.SrcIp + ":" + defaultPort
 	conn, err := grpc.Dial(daemonAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		logrus.Infof("Failed to connect to daemon on %s", daemonAddr)
+		log.Error(err, "Failed to connect to daemon", "daemonAddr", daemonAddr)
 		return err
 	}
 	defer conn.Close()
 	meshnetClient := mpb.NewLocalClient(conn)
 
 	for _, link := range links {
+		log = log.WithValues("link", link)
 		result, err := meshnetClient.AddLink(ctx, &mpb.AddLinkQuery{
 			LocalPod: &mpb.Pod{
 				Name:   topology.Name,
@@ -139,24 +150,28 @@ func (r *TopologyReconciler) AddLinks(ctx context.Context, topology *v1beta1.Top
 			},
 		})
 		if err != nil || !result.GetResponse() {
-			logrus.Errorf("Failed to add link %v: %s", link, err)
+			log.Error(err, "Failed to add link")
 			return err
 		}
+		log.Info("Successfully added link")
 	}
 	return err
 }
 
 func (r *TopologyReconciler) DelLinks(ctx context.Context, topology *v1beta1.Topology, links []v1beta1.Link) error {
+	log := log.FromContext(ctx)
+
 	daemonAddr := topology.Status.SrcIp + ":" + defaultPort
 	conn, err := grpc.Dial(daemonAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		logrus.Infof("Failed to connect to daemon on %s", daemonAddr)
+		log.Error(err, "Failed to connect to daemon", "daemonAddr", daemonAddr)
 		return err
 	}
 	defer conn.Close()
 	meshnetClient := mpb.NewLocalClient(conn)
 
 	for _, link := range links {
+		log = log.WithValues("link", link)
 		result, err := meshnetClient.DelLink(ctx, &mpb.DelLinkQuery{
 			LocalPod: &mpb.Pod{
 				Name:   topology.Name,
@@ -174,18 +189,16 @@ func (r *TopologyReconciler) DelLinks(ctx context.Context, topology *v1beta1.Top
 			},
 		})
 		if err != nil || !result.GetResponse() {
-			logrus.Errorf("Failed to delete link %v: %s", link, err)
+			log.Error(err, "Failed to delete link")
 			return err
 		}
+		log.Info("Successfully deleted link")
 	}
 	return err
 }
 
 // Calculate difference between two old links and new links, returns a list of links to be added and a list of links to be deleted
 func (r *TopologyReconciler) CalcDiff(old []v1beta1.Link, new []v1beta1.Link) (add []v1beta1.Link, del []v1beta1.Link) {
-	fmt.Printf("Before: %v\n", old)
-	fmt.Printf("After: %v\n", new)
-
 	for _, oldLink := range old {
 		found := false
 		for _, newLink := range new {
