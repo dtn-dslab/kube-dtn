@@ -6,7 +6,7 @@ metadata:
   name: manager-role
 rules:
 - apiGroups:
-  - networkop.co.uk
+  - y-young.github.io
   resources:
   - topologies
   verbs:
@@ -18,13 +18,13 @@ rules:
   - update
   - watch
 - apiGroups:
-  - networkop.co.uk
+  - y-young.github.io
   resources:
   - topologies/finalizers
   verbs:
   - update
 - apiGroups:
-  - networkop.co.uk
+  - y-young.github.io
   resources:
   - topologies/status
   verbs:

@@ -1,15 +1,15 @@
-domain: networkop.co.uk
+domain: y-young.github.io
 layout:
 - go.kubebuilder.io/v3
-projectName: meshnet
-repo: networkop.co.uk/meshnet
+projectName: kube-dtn
+repo: github.com/y-young/kube-dtn
 resources:
 - api:
     crdVersion: v1
     namespaced: true
   controller: true
-  domain: networkop.co.uk
+  domain: y-young.github.io
   kind: Topology
-  path: networkop.co.uk/meshnet/api/v1beta1
-  version: v1beta1
+  path: github.com/y-young/kube-dtn/api/v1
+  version: v1
 version: "3"

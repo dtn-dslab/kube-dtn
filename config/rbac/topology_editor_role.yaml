@@ -6,13 +6,13 @@ metadata:
     app.kubernetes.io/name: clusterrole
     app.kubernetes.io/instance: topology-editor-role
     app.kubernetes.io/component: rbac
-    app.kubernetes.io/created-by: meshnet
-    app.kubernetes.io/part-of: meshnet
+    app.kubernetes.io/created-by: kube-dtn
+    app.kubernetes.io/part-of: kube-dtn
     app.kubernetes.io/managed-by: kustomize
   name: topology-editor-role
 rules:
 - apiGroups:
-  - networkop.co.uk
+  - y-young.github.io
   resources:
   - topologies
   verbs:
@@ -24,7 +24,7 @@ rules:
   - update
   - watch
 - apiGroups:
-  - networkop.co.uk
+  - y-young.github.io
   resources:
   - topologies/status
   verbs:

@@ -27,7 +27,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"networkop.co.uk/meshnet/api/v1beta1"
+	v1 "github.com/y-young/kube-dtn/api/v1"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -45,9 +45,9 @@ type TopologyReconciler struct {
 	Scheme *runtime.Scheme
 }
 
-//+kubebuilder:rbac:groups=networkop.co.uk,resources=topologies,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=networkop.co.uk,resources=topologies/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=networkop.co.uk,resources=topologies/finalizers,verbs=update
+//+kubebuilder:rbac:groups=y-young.github.io,resources=topologies,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=y-young.github.io,resources=topologies/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=y-young.github.io,resources=topologies/finalizers,verbs=update
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -61,7 +61,7 @@ type TopologyReconciler struct {
 func (r *TopologyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
 
-	var topology v1beta1.Topology
+	var topology v1.Topology
 	if err := r.Get(ctx, req.NamespacedName, &topology); err != nil {
 		if apierrors.IsNotFound(err) {
 			log.Info("Topology deleted")
@@ -97,7 +97,7 @@ func (r *TopologyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	// Since meshnet CNI will also update the status, retry on conflict
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		var topology v1beta1.Topology
+		var topology v1.Topology
 		if err := r.Get(ctx, req.NamespacedName, &topology); err != nil {
 			if apierrors.IsNotFound(err) {
 				log.Info("Topology deleted")
@@ -119,10 +119,10 @@ func (r *TopologyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	return ctrl.Result{}, nil
 }
 
-func (r *TopologyReconciler) AddLinks(ctx context.Context, topology *v1beta1.Topology, links []v1beta1.Link) error {
+func (r *TopologyReconciler) AddLinks(ctx context.Context, topology *v1.Topology, links []v1.Link) error {
 	log := log.FromContext(ctx)
 
-	daemonAddr := topology.Status.SrcIp + ":" + defaultPort
+	daemonAddr := topology.Status.SrcIP + ":" + defaultPort
 	conn, err := grpc.Dial(daemonAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Error(err, "Failed to connect to daemon", "daemonAddr", daemonAddr)
@@ -136,7 +136,7 @@ func (r *TopologyReconciler) AddLinks(ctx context.Context, topology *v1beta1.Top
 		result, err := meshnetClient.AddLink(ctx, &mpb.AddLinkQuery{
 			LocalPod: &mpb.Pod{
 				Name:   topology.Name,
-				SrcIp:  topology.Status.SrcIp,
+				SrcIp:  topology.Status.SrcIP,
 				NetNs:  topology.Status.NetNs,
 				KubeNs: topology.Namespace,
 			},
@@ -158,10 +158,10 @@ func (r *TopologyReconciler) AddLinks(ctx context.Context, topology *v1beta1.Top
 	return err
 }
 
-func (r *TopologyReconciler) DelLinks(ctx context.Context, topology *v1beta1.Topology, links []v1beta1.Link) error {
+func (r *TopologyReconciler) DelLinks(ctx context.Context, topology *v1.Topology, links []v1.Link) error {
 	log := log.FromContext(ctx)
 
-	daemonAddr := topology.Status.SrcIp + ":" + defaultPort
+	daemonAddr := topology.Status.SrcIP + ":" + defaultPort
 	conn, err := grpc.Dial(daemonAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Error(err, "Failed to connect to daemon", "daemonAddr", daemonAddr)
@@ -175,7 +175,7 @@ func (r *TopologyReconciler) DelLinks(ctx context.Context, topology *v1beta1.Top
 		result, err := meshnetClient.DelLink(ctx, &mpb.DelLinkQuery{
 			LocalPod: &mpb.Pod{
 				Name:   topology.Name,
-				SrcIp:  topology.Status.SrcIp,
+				SrcIp:  topology.Status.SrcIP,
 				NetNs:  topology.Status.NetNs,
 				KubeNs: topology.Namespace,
 			},
@@ -198,7 +198,7 @@ func (r *TopologyReconciler) DelLinks(ctx context.Context, topology *v1beta1.Top
 }
 
 // Calculate difference between two old links and new links, returns a list of links to be added and a list of links to be deleted
-func (r *TopologyReconciler) CalcDiff(old []v1beta1.Link, new []v1beta1.Link) (add []v1beta1.Link, del []v1beta1.Link) {
+func (r *TopologyReconciler) CalcDiff(old []v1.Link, new []v1.Link) (add []v1.Link, del []v1.Link) {
 	for _, oldLink := range old {
 		found := false
 		for _, newLink := range new {
@@ -230,6 +230,6 @@ func (r *TopologyReconciler) CalcDiff(old []v1beta1.Link, new []v1beta1.Link) (a
 // SetupWithManager sets up the controller with the Manager.
 func (r *TopologyReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&v1beta1.Topology{}).
+		For(&v1.Topology{}).
 		Complete(r)
 }

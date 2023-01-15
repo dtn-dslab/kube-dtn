@@ -11,8 +11,6 @@ COPY go.sum go.sum
 # Temporary solution
 COPY ./meshnet-cni /meshnet-cni
 
-# Aliyun and goproxy.cn has trouble with curl and TLS v1.3,
-# goproxy.io doesn't support TLS v1.3
 ENV GOPROXY=https://goproxy.io
 # cache deps before building and copying source so that we don't need to re-download as much
 # and so that source changes don't invalidate our downloaded layer

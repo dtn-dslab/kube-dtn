@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1beta1
+package v1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -41,11 +41,11 @@ type TopologyStatus struct {
 	// +optional
 	Skipped []string `json:"skipped"`
 
-	// Source IP of the POD
+	// Source IP of the pod
 	// +optional
-	SrcIp string `json:"src_ip"`
+	SrcIP string `json:"src_ip"`
 
-	// Network namespace of the POD
+	// Network namespace of the pod
 	// +optional
 	NetNs string `json:"net_ns"`
 
@@ -58,17 +58,22 @@ type TopologyStatus struct {
 type Link struct {
 	// Local interface name
 	LocalIntf string `json:"local_intf"`
+
 	// Local IP address
 	// +optional
 	LocalIP string `json:"local_ip"`
+
 	// Peer interface name
 	PeerIntf string `json:"peer_intf"`
+
 	// Peer IP address
 	// +optional
 	PeerIP string `json:"peer_ip"`
+
 	// Name of the peer pod
 	PeerPod string `json:"peer_pod"`
-	// Unique identified of a p2p link
+
+	// Unique identifier of a p2p link
 	UID int `json:"uid"`
 }
 

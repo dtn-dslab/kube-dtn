@@ -75,7 +75,7 @@ run: manifests generate fmt vet ## Run a controller from your host.
 docker-build: test ## Build docker image with the manager.
 	cp -r ../meshnet-cni ./
 	docker build -t ${IMG} .
-	rm -r ./meshnet-cni 
+	rm -r ./meshnet-cni
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
