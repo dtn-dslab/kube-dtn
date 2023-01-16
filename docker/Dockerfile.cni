@@ -1,0 +1,76 @@
+# GRPC generation
+FROM golang:1.18.2 AS proto_base
+
+WORKDIR /src
+
+ENV GOPROXY=https://mirrors.aliyun.com/goproxy/
+RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+RUN go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+RUN go install github.com/bufbuild/buf/cmd/buf@v1.9.0
+
+COPY proto .
+COPY buf.gen.yaml .
+COPY buf.yaml .
+
+RUN buf lint && buf generate -v
+
+#---------------------------------------------- Stage 2: Build Base : Build mesnet binraries (Plugin & daemon) - ---------------------------------
+# Building the binaries
+#FROM golang:1.17.2 AS build_base
+FROM golang:1.18.2 AS build_base
+
+
+WORKDIR /go/src/github.com/y-young/kube-dtn
+ENV CGO_ENABLED=0 GOPROXY=https://mirrors.aliyun.com/goproxy/
+COPY go.mod .
+COPY go.sum .
+RUN go mod download; \
+    apt-get update -y; \
+    apt-get install -y libpcap-dev; \
+    apt-get install -y libsystemd-dev;
+ 
+    # apt-get install -y libmnl; \
+    # apt-get install -y libmnl-dev; \
+    # go get github.com/chamaken/cgolmnl
+
+FROM --platform=${BUILDPLATFORM:-linux/amd64} build_base AS build
+
+ARG LDFLAGS
+ARG TARGETOS
+ARG TARGETARCH
+
+COPY daemon/ daemon/
+COPY api/ api/
+COPY proto/ proto/
+COPY plugin/ plugin/
+COPY common/ common/
+COPY --from=proto_base /src/ .
+COPY go.mod .
+COPY go.sum .
+
+RUN GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -o kubedtn github.com/y-young/kube-dtn/plugin 
+RUN GOOS=${TARGETOS} CGO_ENABLED=1 GOARCH=${TARGETARCH} go build -ldflags="-s -w" -o kubedtnd daemon/main.go; 
+
+
+#----------------------------------------------------- Final Conatiner ---------------------------------
+# FROM alpine:latest
+# RUN apk update; \
+#     apk add --no-cache jq
+
+FROM ubuntu:20.04
+RUN apt-get update; \ 
+    apt-get install -y jq; \
+    apt-get install -y libpcap-dev
+
+# apt-get install -y libpcap-dev; \  
+
+COPY --from=build /go/src/github.com/y-young/kube-dtn/kubedtn /
+COPY --from=build /go/src/github.com/y-young/kube-dtn/kubedtnd /
+#COPY etc/cni/net.d/kubedtn.conf /
+COPY docker/new-entrypoint.sh /entrypoint.sh
+# COPY LICENSE /
+RUN chmod +x ./entrypoint.sh
+RUN chmod +x /kubedtnd
+#RUN mkdir /lib64 && ln -s /lib/libc.musl-x86_64.so.1 /lib64/ld-linux-x86-64.so.2
+
+ENTRYPOINT ./entrypoint.sh

@@ -4,6 +4,9 @@ IMG ?= controller:latest
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 ENVTEST_K8S_VERSION = 1.25.0
 
+COMMIT := $(shell git describe --dirty --always)
+TAG := $(shell git describe --tags --abbrev=0 || echo latest)
+
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
 GOBIN=$(shell go env GOPATH)/bin
@@ -15,6 +18,10 @@ endif
 # Options are set to exit when a recipe line exits non-zero or a piped command fails.
 SHELL = /usr/bin/env bash -o pipefail
 .SHELLFLAGS = -ec
+
+include .mk/buf.mk
+include .mk/build.mk
+include .mk/kustomize.mk
 
 .PHONY: all
 all: build
@@ -73,9 +80,7 @@ run: manifests generate fmt vet ## Run a controller from your host.
 # More info: https://docs.docker.com/develop/develop-images/build_enhancements/
 .PHONY: docker-build
 docker-build: test ## Build docker image with the manager.
-	cp -r ../meshnet-cni ./
 	docker build -t ${IMG} .
-	rm -r ./meshnet-cni
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.

@@ -32,7 +32,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
-	mpb "github.com/networkop/meshnet-cni/daemon/proto/meshnet/v1beta1"
+	pb "github.com/y-young/kube-dtn/proto/v1"
 )
 
 const (
@@ -95,7 +95,7 @@ func (r *TopologyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		}
 	}
 
-	// Since meshnet CNI will also update the status, retry on conflict
+	// Since kubedtn CNI will also update the status, retry on conflict
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		var topology v1.Topology
 		if err := r.Get(ctx, req.NamespacedName, &topology); err != nil {
@@ -129,18 +129,18 @@ func (r *TopologyReconciler) AddLinks(ctx context.Context, topology *v1.Topology
 		return err
 	}
 	defer conn.Close()
-	meshnetClient := mpb.NewLocalClient(conn)
+	kubedtnClient := pb.NewLocalClient(conn)
 
 	for _, link := range links {
 		log = log.WithValues("link", link)
-		result, err := meshnetClient.AddLink(ctx, &mpb.AddLinkQuery{
-			LocalPod: &mpb.Pod{
+		result, err := kubedtnClient.AddLink(ctx, &pb.AddLinkQuery{
+			LocalPod: &pb.Pod{
 				Name:   topology.Name,
 				SrcIp:  topology.Status.SrcIP,
 				NetNs:  topology.Status.NetNs,
 				KubeNs: topology.Namespace,
 			},
-			Link: &mpb.Link{
+			Link: &pb.Link{
 				PeerPod:   link.PeerPod,
 				LocalIntf: link.LocalIntf,
 				PeerIntf:  link.PeerIntf,
@@ -168,18 +168,18 @@ func (r *TopologyReconciler) DelLinks(ctx context.Context, topology *v1.Topology
 		return err
 	}
 	defer conn.Close()
-	meshnetClient := mpb.NewLocalClient(conn)
+	kubedtnClient := pb.NewLocalClient(conn)
 
 	for _, link := range links {
 		log = log.WithValues("link", link)
-		result, err := meshnetClient.DelLink(ctx, &mpb.DelLinkQuery{
-			LocalPod: &mpb.Pod{
+		result, err := kubedtnClient.DelLink(ctx, &pb.DelLinkQuery{
+			LocalPod: &pb.Pod{
 				Name:   topology.Name,
 				SrcIp:  topology.Status.SrcIP,
 				NetNs:  topology.Status.NetNs,
 				KubeNs: topology.Namespace,
 			},
-			Link: &mpb.Link{
+			Link: &pb.Link{
 				PeerPod:   link.PeerPod,
 				LocalIntf: link.LocalIntf,
 				PeerIntf:  link.PeerIntf,
