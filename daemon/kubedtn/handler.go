@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 
+	v1 "github.com/y-young/kube-dtn/api/v1"
 	"github.com/y-young/kube-dtn/daemon/grpcwire"
 	"github.com/y-young/kube-dtn/daemon/vxlan"
 
@@ -15,7 +16,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/util/retry"
 
 	"github.com/google/gopacket/pcap"
@@ -26,51 +26,63 @@ import (
 // TODO: Call SetInterNodeLinkType
 var interNodeLinkType = common.INTER_NODE_LINK_VXLAN
 
-func (m *KubeDTN) getPod(ctx context.Context, name, ns string) (*unstructured.Unstructured, error) {
+func (m *KubeDTN) getPod(ctx context.Context, name, ns string) (*v1.Topology, error) {
 	log.Infof("Reading pod %s from K8s", name)
-	return m.tClient.Topology(ns).Unstructured(ctx, name, metav1.GetOptions{})
+	return m.tClient.Topology(ns).Get(ctx, name, metav1.GetOptions{})
 }
 
-func (m *KubeDTN) updateStatus(ctx context.Context, obj *unstructured.Unstructured, ns string) error {
-	log.Infof("Update pod status %s from K8s", obj.GetName())
-	_, err := m.tClient.Topology(ns).Update(ctx, obj, metav1.UpdateOptions{})
+func (m *KubeDTN) updateStatus(ctx context.Context, topology *v1.Topology, ns string) error {
+	log.Infof("Update pod status %s from K8s", topology.Name)
+	_, err := m.tClient.Topology(ns).Update(ctx, topology, metav1.UpdateOptions{})
 	return err
 }
 
 func (m *KubeDTN) Get(ctx context.Context, pod *pb.PodQuery) (*pb.Pod, error) {
 	log.Infof("Retrieving %s's metadata from K8s...", pod.Name)
 
-	result, err := m.getPod(ctx, pod.Name, pod.KubeNs)
+	topology, err := m.getPod(ctx, pod.Name, pod.KubeNs)
 	if err != nil {
 		log.Errorf("Failed to read pod %s from K8s", pod.Name)
 		return nil, err
 	}
 
-	remoteLinks, found, err := unstructured.NestedSlice(result.Object, "spec", "links")
-	if err != nil || !found || remoteLinks == nil {
+	remoteLinks := topology.Spec.Links
+	if remoteLinks == nil {
 		log.Errorf("Could not find 'Link' array in pod's spec")
-		return nil, err
+		return nil, fmt.Errorf("could not find 'Link' array in pod's spec")
 	}
 
 	links := make([]*pb.Link, len(remoteLinks))
 	for i := range links {
-		remoteLink, ok := remoteLinks[i].(map[string]interface{})
-		if !ok {
-			log.Errorf("Unrecognised 'Link' structure")
-			return nil, err
+		remoteLink := remoteLinks[i]
+		newLink := &pb.Link{
+			PeerPod:   remoteLink.PeerPod,
+			PeerIntf:  remoteLink.PeerIntf,
+			LocalIntf: remoteLink.LocalIntf,
+			LocalIp:   remoteLink.LocalIP,
+			PeerIp:    remoteLink.PeerIP,
+			Uid:       int64(remoteLink.UID),
+			Properties: &pb.LinkProperties{
+				Latency:       remoteLink.Properties.Latency,
+				LatencyCorr:   remoteLink.Properties.LatencyCorr,
+				Jitter:        remoteLink.Properties.Jitter,
+				Loss:          remoteLink.Properties.Loss,
+				LossCorr:      remoteLink.Properties.LossCorr,
+				Rate:          remoteLink.Properties.Rate,
+				Gap:           remoteLink.Properties.Gap,
+				Duplicate:     remoteLink.Properties.Duplicate,
+				DuplicateCorr: remoteLink.Properties.DuplicateCorr,
+				ReorderProb:   remoteLink.Properties.ReorderProb,
+				ReorderCorr:   remoteLink.Properties.ReorderCorr,
+				CorruptProb:   remoteLink.Properties.CorruptProb,
+				CorruptCorr:   remoteLink.Properties.CorruptCorr,
+			},
 		}
-		newLink := &pb.Link{}
-		newLink.PeerPod, _, _ = unstructured.NestedString(remoteLink, "peer_pod")
-		newLink.PeerIntf, _, _ = unstructured.NestedString(remoteLink, "peer_intf")
-		newLink.LocalIntf, _, _ = unstructured.NestedString(remoteLink, "local_intf")
-		newLink.LocalIp, _, _ = unstructured.NestedString(remoteLink, "local_ip")
-		newLink.PeerIp, _, _ = unstructured.NestedString(remoteLink, "peer_ip")
-		newLink.Uid, _, _ = unstructured.NestedInt64(remoteLink, "uid")
 		links[i] = newLink
 	}
 
-	srcIP, _, _ := unstructured.NestedString(result.Object, "status", "src_ip")
-	netNs, _, _ := unstructured.NestedString(result.Object, "status", "net_ns")
+	srcIP := topology.Status.SrcIP
+	netNs := topology.Status.NetNs
 	nodeIP := os.Getenv("HOST_IP")
 
 	return &pb.Pod{
@@ -87,21 +99,16 @@ func (m *KubeDTN) SetAlive(ctx context.Context, pod *pb.Pod) (*pb.BoolResponse, 
 	log.Infof("Setting %s's SrcIp=%s and NetNs=%s", pod.Name, pod.SrcIp, pod.NetNs)
 
 	retryErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		result, err := m.getPod(ctx, pod.Name, pod.KubeNs)
+		topology, err := m.getPod(ctx, pod.Name, pod.KubeNs)
 		if err != nil {
 			log.Errorf("Failed to read pod %s from K8s", pod.Name)
 			return err
 		}
 
-		if err = unstructured.SetNestedField(result.Object, pod.SrcIp, "status", "src_ip"); err != nil {
-			log.Errorf("Failed to update pod's src_ip")
-		}
+		topology.Status.SrcIP = pod.SrcIp
+		topology.Status.NetNs = pod.NetNs
 
-		if err = unstructured.SetNestedField(result.Object, pod.NetNs, "status", "net_ns"); err != nil {
-			log.Errorf("Failed to update pod's net_ns")
-		}
-
-		return m.updateStatus(ctx, result, pod.KubeNs)
+		return m.updateStatus(ctx, topology, pod.KubeNs)
 	})
 
 	if retryErr != nil {
@@ -119,22 +126,17 @@ func (m *KubeDTN) Skip(ctx context.Context, skip *pb.SkipQuery) (*pb.BoolRespons
 	log.Infof("Skipping of pod %s by pod %s", skip.Peer, skip.Pod)
 
 	retryErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		result, err := m.getPod(ctx, skip.Pod, skip.KubeNs)
+		topology, err := m.getPod(ctx, skip.Pod, skip.KubeNs)
 		if err != nil {
 			log.Errorf("Failed to read pod %s from K8s", skip.Pod)
 			return err
 		}
 
-		skipped, _, _ := unstructured.NestedSlice(result.Object, "status", "skipped")
-
+		skipped := topology.Status.Skipped
 		newSkipped := append(skipped, skip.Peer)
+		topology.Status.Skipped = newSkipped
 
-		if err := unstructured.SetNestedField(result.Object, newSkipped, "status", "skipped"); err != nil {
-			log.Errorf("Failed to updated skipped list")
-			return err
-		}
-
-		return m.updateStatus(ctx, result, skip.KubeNs)
+		return m.updateStatus(ctx, topology, skip.KubeNs)
 	})
 	if retryErr != nil {
 		log.WithFields(log.Fields{
@@ -161,15 +163,12 @@ func (m *KubeDTN) SkipReverse(ctx context.Context, skip *pb.SkipQuery) (*pb.Bool
 		podName = peerPod.GetName()
 
 		// extracting peer pod's skipped list and adding this pod's name to it
-		peerSkipped, _, _ := unstructured.NestedSlice(peerPod.Object, "status", "skipped")
+		peerSkipped := peerPod.Status.Skipped
 		newPeerSkipped := append(peerSkipped, skip.Pod)
 
 		log.Infof("Updating peer skipped list")
 		// updating peer pod's skipped list locally
-		if err := unstructured.SetNestedField(peerPod.Object, newPeerSkipped, "status", "skipped"); err != nil {
-			log.Errorf("Failed to updated reverse-skipped list for peer pod %s", peerPod.GetName())
-			return err
-		}
+		peerPod.Status.Skipped = newPeerSkipped
 
 		// sending peer pod's updates to k8s
 		return m.updateStatus(ctx, peerPod, skip.KubeNs)
@@ -191,20 +190,17 @@ func (m *KubeDTN) SkipReverse(ctx context.Context, skip *pb.SkipQuery) (*pb.Bool
 		}
 
 		// extracting this pod's skipped list and removing peer pod's name from it
-		thisSkipped, _, _ := unstructured.NestedSlice(thisPod.Object, "status", "skipped")
-		newThisSkipped := make([]interface{}, 0)
+		thisSkipped := thisPod.Status.Skipped
+		newThisSkipped := make([]string, 0)
 
 		log.WithFields(log.Fields{
 			"thisSkipped": thisSkipped,
 		}).Info("THIS SKIPPED:")
 
 		for _, el := range thisSkipped {
-			elString, ok := el.(string)
-			if ok {
-				if elString != skip.Peer {
-					log.Errorf("Appending new element %s", elString)
-					newThisSkipped = append(newThisSkipped, elString)
-				}
+			if el != skip.Peer {
+				log.Errorf("Appending new element %s", el)
+				newThisSkipped = append(newThisSkipped, el)
 			}
 		}
 
@@ -214,11 +210,7 @@ func (m *KubeDTN) SkipReverse(ctx context.Context, skip *pb.SkipQuery) (*pb.Bool
 
 		// updating this pod's skipped list locally
 		if len(newThisSkipped) != 0 {
-			if err := unstructured.SetNestedField(thisPod.Object, newThisSkipped, "status", "skipped"); err != nil {
-				log.Errorf("Failed to cleanup skipped list for pod %s", thisPod.GetName())
-				return err
-			}
-
+			thisPod.Status.Skipped = newThisSkipped
 			// sending this pod's updates to k8s
 			return m.updateStatus(ctx, thisPod, skip.KubeNs)
 		}
@@ -238,16 +230,16 @@ func (m *KubeDTN) SkipReverse(ctx context.Context, skip *pb.SkipQuery) (*pb.Bool
 func (m *KubeDTN) IsSkipped(ctx context.Context, skip *pb.SkipQuery) (*pb.BoolResponse, error) {
 	log.Infof("Checking if %s is skipped by %s", skip.Peer, skip.Pod)
 
-	result, err := m.getPod(ctx, skip.Peer, skip.KubeNs)
+	topology, err := m.getPod(ctx, skip.Peer, skip.KubeNs)
 	if err != nil {
 		log.Errorf("Failed to read pod %s from K8s", skip.Pod)
 		return nil, err
 	}
 
-	skipped, _, _ := unstructured.NestedSlice(result.Object, "status", "skipped")
+	skipped := topology.Status.Skipped
 
 	for _, peer := range skipped {
-		if skip.Pod == peer.(string) {
+		if skip.Pod == peer {
 			return &pb.BoolResponse{Response: true}, nil
 		}
 	}
@@ -447,7 +439,7 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 					return err
 				}
 				log.Infof("Adding the new veth link to both pods")
-				if err = koko.MakeVeth(*myVeth, *peerVeth); err != nil {
+				if err = m.makeVeth(myVeth, peerVeth, link); err != nil {
 					log.Infof("Error creating VEth pair after peer link remove: %s", err)
 					return err
 				}
@@ -458,7 +450,7 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 					return err
 				}
 				log.Infof("Adding the new veth link to both pods")
-				if err = koko.MakeVeth(*myVeth, *peerVeth); err != nil {
+				if err = m.makeVeth(myVeth, peerVeth, link); err != nil {
 					log.Infof("Error creating VEth pair after local link remove: %s", err)
 					return err
 				}
@@ -481,7 +473,7 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 
 				if isSkipped.Response || higherPrio { // If peer POD skipped us (booted before us) or we have a higher priority
 					log.Infof("Peer POD has skipped us or we have a higher priority")
-					if err = koko.MakeVeth(*myVeth, *peerVeth); err != nil {
+					if err = m.makeVeth(myVeth, peerVeth, link); err != nil {
 						log.Infof("Error when creating a new VEth pair with koko: %s", err)
 						log.Infof("MY VETH STRUCT: %+v", spew.Sdump(myVeth))
 						log.Infof("PEER STRUCT: %+v", spew.Sdump(peerVeth))
@@ -559,6 +551,29 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 			log.Infof("Failed to set a skipped flag on peer %s", peerPod.Name)
 			return err
 		}
+	}
+	return nil
+}
+
+func (m *KubeDTN) makeVeth(self *koko.VEth, peer *koko.VEth, link *pb.Link) error {
+	err := koko.MakeVeth(*self, *peer)
+	if err != nil {
+		return err
+	}
+	qdiscs, err := common.MakeQdiscs(link.Properties)
+	if err != nil {
+		log.Errorf("Failed to construct qdiscs: %s", err)
+		return err
+	}
+	err = common.SetVethQdiscs(self, qdiscs)
+	if err != nil {
+		log.Errorf("Failed to set qdisc on self veth %s: %v", self, err)
+		return err
+	}
+	err = common.SetVethQdiscs(peer, qdiscs)
+	if err != nil {
+		log.Errorf("Failed to set qdisc on peer veth %s: %v", self, err)
+		return err
 	}
 	return nil
 }

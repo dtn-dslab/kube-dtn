@@ -54,6 +54,55 @@ spec:
                     peer_pod:
                       description: Name of the peer pod
                       type: string
+                    properties:
+                      description: Link properties, latency, bandwidth, etc
+                      properties:
+                        corrupt_corr:
+                          description: Corrupt correlation in float percentage
+                          type: string
+                        corrupt_prob:
+                          description: Corrupt probability in float percentage
+                          type: string
+                        duplicate:
+                          description: Duplicate rate in float percentage
+                          type: string
+                        duplicate_corr:
+                          description: Duplicate correlation in float percentage
+                          type: string
+                        gap:
+                          description: Gap every N packets
+                          format: int32
+                          type: integer
+                        jitter:
+                          description: Jitter in duration string format, e.g. "300ms",
+                            "1.5s". Valid time units are "ns", "us" (or "µs"), "ms",
+                            "s", "m", "h".
+                          type: string
+                        latency:
+                          description: Latency in duration string format, e.g. "300ms",
+                            "1.5s". Valid time units are "ns", "us" (or "µs"), "ms",
+                            "s", "m", "h".
+                          type: string
+                        latency_corr:
+                          description: Latency correlation in float percentage
+                          type: string
+                        loss:
+                          description: Loss rate in float percentage
+                          type: string
+                        loss_corr:
+                          description: Loss correlation in float percentage
+                          type: string
+                        rate:
+                          description: Bandwidth rate limit in bits per second.
+                          format: int64
+                          type: integer
+                        reorder_corr:
+                          description: Reorder correlation in float percentage
+                          type: string
+                        reorder_prob:
+                          description: Reorder probability in float percentage
+                          type: string
+                      type: object
                     uid:
                       description: Unique identifier of a p2p link
                       type: integer
@@ -88,6 +137,55 @@ spec:
                     peer_pod:
                       description: Name of the peer pod
                       type: string
+                    properties:
+                      description: Link properties, latency, bandwidth, etc
+                      properties:
+                        corrupt_corr:
+                          description: Corrupt correlation in float percentage
+                          type: string
+                        corrupt_prob:
+                          description: Corrupt probability in float percentage
+                          type: string
+                        duplicate:
+                          description: Duplicate rate in float percentage
+                          type: string
+                        duplicate_corr:
+                          description: Duplicate correlation in float percentage
+                          type: string
+                        gap:
+                          description: Gap every N packets
+                          format: int32
+                          type: integer
+                        jitter:
+                          description: Jitter in duration string format, e.g. "300ms",
+                            "1.5s". Valid time units are "ns", "us" (or "µs"), "ms",
+                            "s", "m", "h".
+                          type: string
+                        latency:
+                          description: Latency in duration string format, e.g. "300ms",
+                            "1.5s". Valid time units are "ns", "us" (or "µs"), "ms",
+                            "s", "m", "h".
+                          type: string
+                        latency_corr:
+                          description: Latency correlation in float percentage
+                          type: string
+                        loss:
+                          description: Loss rate in float percentage
+                          type: string
+                        loss_corr:
+                          description: Loss correlation in float percentage
+                          type: string
+                        rate:
+                          description: Bandwidth rate limit in bits per second.
+                          format: int64
+                          type: integer
+                        reorder_corr:
+                          description: Reorder correlation in float percentage
+                          type: string
+                        reorder_prob:
+                          description: Reorder probability in float percentage
+                          type: string
+                      type: object
                     uid:
                       description: Unique identifier of a p2p link
                       type: integer

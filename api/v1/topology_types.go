@@ -75,6 +75,66 @@ type Link struct {
 
 	// Unique identifier of a p2p link
 	UID int `json:"uid"`
+
+	// Link properties, latency, bandwidth, etc
+	// +optional
+	Properties LinkProperties `json:"properties,omitempty"`
+}
+
+type LinkProperties struct {
+	// Latency in duration string format, e.g. "300ms", "1.5s".
+	// Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h".
+	// +optional
+	Latency string `json:"latency,omitempty"`
+
+	// Latency correlation in float percentage
+	// +optional
+	LatencyCorr string `json:"latency_corr,omitempty"`
+
+	// Jitter in duration string format, e.g. "300ms", "1.5s".
+	// Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h".
+	// +optional
+	Jitter string `json:"jitter,omitempty"`
+
+	// Loss rate in float percentage
+	// +optional
+	Loss string `json:"loss,omitempty"`
+
+	// Loss correlation in float percentage
+	// +optional
+	LossCorr string `json:"loss_corr,omitempty"`
+
+	// Bandwidth rate limit in bits per second.
+	// +optional
+	Rate uint64 `json:"rate,omitempty"`
+
+	// Gap every N packets
+	// +optional
+	Gap uint32 `json:"gap,omitempty"`
+
+	// Duplicate rate in float percentage
+	// +optional
+	Duplicate string `json:"duplicate,omitempty"`
+
+	// Duplicate correlation in float percentage
+	// +optional
+	DuplicateCorr string `json:"duplicate_corr,omitempty"`
+
+	// Reorder probability in float percentage
+	// +optional
+	ReorderProb string `json:"reorder_prob,omitempty"`
+
+	// Reorder correlation in float percentage
+	// +optional
+	ReorderCorr string `json:"reorder_corr,omitempty"`
+
+	// Corrupt probability in float percentage
+	// +optional
+	CorruptProb string `json:"corrupt_prob,omitempty"`
+
+	// Corrupt correlation in float percentage
+	// +optional
+	CorruptCorr string `json:"corrupt_corr,omitempty"`
 }
 
 //+kubebuilder:object:root=true

@@ -21,6 +21,23 @@ message Link {
   string local_ip = 4;
   string peer_ip = 5;
   int64 uid = 6;
+  LinkProperties properties = 7;
+}
+
+message LinkProperties {
+  string latency = 1;
+  string latency_corr = 2;
+  string jitter = 3;
+  string loss = 4;
+  string loss_corr = 5;
+  uint64 rate = 6;
+  uint32 gap = 7;
+  string duplicate = 8;
+  string duplicate_corr = 9;
+  string reorder_prob = 10;
+  string reorder_corr = 11;
+  string corrupt_prob = 12;
+  string corrupt_corr = 13;
 }
 
 message PodQuery {

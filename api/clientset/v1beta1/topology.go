@@ -16,11 +16,9 @@ package v1beta1
 
 import (
 	"context"
-	"fmt"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/dynamic"
@@ -38,7 +36,7 @@ type TopologyInterface interface {
 	Delete(ctx context.Context, name string, opts metav1.DeleteOptions) error
 	Watch(ctx context.Context, opts metav1.ListOptions) (watch.Interface, error)
 	Unstructured(ctx context.Context, name string, opts metav1.GetOptions, subresources ...string) (*unstructured.Unstructured, error)
-	Update(ctx context.Context, obj *unstructured.Unstructured, opts metav1.UpdateOptions) (*topologyv1.Topology, error)
+	Update(ctx context.Context, topology *topologyv1.Topology, opts metav1.UpdateOptions) (*topologyv1.Topology, error)
 }
 
 // Interface is the clientset interface for topology.
@@ -155,17 +153,19 @@ func (t *topologyClient) Delete(ctx context.Context, name string, opts metav1.De
 		Error()
 }
 
-func (t *topologyClient) Update(ctx context.Context, obj *unstructured.Unstructured, opts metav1.UpdateOptions) (*topologyv1.Topology, error) {
+func (t *topologyClient) Update(ctx context.Context, topology *topologyv1.Topology, opts metav1.UpdateOptions) (*topologyv1.Topology, error) {
 	result := topologyv1.Topology{}
-	obj, err := t.dInterface.Namespace(t.ns).UpdateStatus(ctx, obj, metav1.UpdateOptions{})
-	if err != nil {
-		return nil, err
-	}
-	err = runtime.DefaultUnstructuredConverter.FromUnstructured(obj.UnstructuredContent(), &result)
-	if err != nil {
-		return nil, fmt.Errorf("failed to type assert return to topology")
-	}
-	return &result, nil
+	err := t.restClient.
+		Put().
+		Namespace(t.ns).
+		Resource("topologies").
+		Name(topology.Name).
+		SubResource("status").
+		VersionedParams(&opts, scheme.ParameterCodec).
+		Body(topology).
+		Do(ctx).
+		Into(&result)
+	return &result, err
 }
 
 func (t *topologyClient) Unstructured(ctx context.Context, name string, opts metav1.GetOptions, subresources ...string) (*unstructured.Unstructured, error) {
