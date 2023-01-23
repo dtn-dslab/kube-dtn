@@ -93,9 +93,9 @@ spec:
                           description: Loss correlation in float percentage
                           type: string
                         rate:
-                          description: Bandwidth rate limit in bits per second.
-                          format: int64
-                          type: integer
+                          description: Bandwidth rate limit, e.g. 1000(bit/s), 100kbit,
+                            100Mbps, 1Gibps. For more information, refer to https://man7.org/linux/man-pages/man8/tc.8.html.
+                          type: string
                         reorder_corr:
                           description: Reorder correlation in float percentage
                           type: string
@@ -176,9 +176,9 @@ spec:
                           description: Loss correlation in float percentage
                           type: string
                         rate:
-                          description: Bandwidth rate limit in bits per second.
-                          format: int64
-                          type: integer
+                          description: Bandwidth rate limit, e.g. 1000(bit/s), 100kbit,
+                            100Mbps, 1Gibps. For more information, refer to https://man7.org/linux/man-pages/man8/tc.8.html.
+                          type: string
                         reorder_corr:
                           description: Reorder correlation in float percentage
                           type: string

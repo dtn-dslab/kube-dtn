@@ -30,7 +30,7 @@ message LinkProperties {
   string jitter = 3;
   string loss = 4;
   string loss_corr = 5;
-  uint64 rate = 6;
+  string rate = 6;
   uint32 gap = 7;
   string duplicate = 8;
   string duplicate_corr = 9;

@@ -5,6 +5,7 @@ import (
 	"math"
 	"os/exec"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/containernetworking/plugins/pkg/ns"
@@ -102,10 +103,15 @@ func MakeQdiscs(properties *pb.LinkProperties) ([]netlink.Qdisc, error) {
 	})
 	qdiscs = append(qdiscs, netemQdisc)
 
-	if properties.Rate != 0 {
+	rate, err := ParseRate(properties.Rate)
+	if err != nil {
+		log.Errorf("Invalid rate value: %s", err)
+		return nil, err
+	}
+	if rate != 0 {
 		tbfQdisc := &netlink.Tbf{
-			Rate:   properties.Rate,
-			Buffer: getTbfBurst(properties.Rate),
+			Rate:   rate,
+			Buffer: getTbfBurst(rate),
 			// Limit will be set through latency in command
 			Minburst: 1500,
 		}
@@ -145,6 +151,47 @@ func ParseDuration(str string) (uint32, error) {
 		return 0, fmt.Errorf("duration value must be positive")
 	}
 	return uint32(value.Microseconds()), nil
+}
+
+// Parse a rate string into an uint64 value in bits per second
+// e.g. 1000, 100kbit, 100Mbps, 1Gibps
+func ParseRate(rate string) (uint64, error) {
+	rate = strings.TrimSpace(strings.ToLower(rate))
+	if rate == "" {
+		return 0, nil
+	}
+
+	var unitMultiplier uint64 = 1
+	if strings.HasSuffix(rate, "bit") {
+		rate = strings.TrimSuffix(rate, "bit")
+	} else if strings.HasSuffix(rate, "bps") {
+		rate = strings.TrimSuffix(rate, "bps")
+		unitMultiplier = 8
+	}
+
+	// Assume SI-prefixes by default
+	var base uint64 = 1000
+	// If using IEC-prefixes, switch to binary base, e.g. MiB
+	if strings.HasSuffix(rate, "i") {
+		rate = strings.TrimSuffix(rate, "i")
+		base = 1024
+	}
+
+	for i, unit := range []string{"k", "m", "g", "t"} {
+		if strings.HasSuffix(rate, unit) {
+			rate = strings.TrimSuffix(rate, unit)
+			for j := 0; j < i+1; j++ {
+				unitMultiplier *= base
+			}
+			break
+		}
+	}
+
+	value, err := strconv.ParseUint(rate, 10, 64)
+	if err != nil {
+		return 0, err
+	}
+	return value * unitMultiplier, nil
 }
 
 func SetVethQdiscs(veth *koko.VEth, qdiscs []netlink.Qdisc) (err error) {

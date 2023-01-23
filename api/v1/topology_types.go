@@ -104,9 +104,10 @@ type LinkProperties struct {
 	// +optional
 	LossCorr string `json:"loss_corr,omitempty"`
 
-	// Bandwidth rate limit in bits per second.
+	// Bandwidth rate limit, e.g. 1000(bit/s), 100kbit, 100Mbps, 1Gibps.
+	// For more information, refer to https://man7.org/linux/man-pages/man8/tc.8.html.
 	// +optional
-	Rate uint64 `json:"rate,omitempty"`
+	Rate string `json:"rate,omitempty"`
 
 	// Gap every N packets
 	// +optional
