@@ -39,15 +39,21 @@ type KubeDTN struct {
 	lis     net.Listener
 }
 
+var logger *log.Entry = nil
+
+func InitLogger() {
+	logger = log.WithFields(log.Fields{"daemon": "kubedtnd"})
+}
+
 func restConfig() (*rest.Config, error) {
-	log.Infof("Trying in-cluster configuration")
+	logger.Infof("Trying in-cluster configuration")
 	rCfg, err := rest.InClusterConfig()
 	if err != nil {
 		kubecfg := filepath.Join(".kube", "config")
 		if home := homedir.HomeDir(); home != "" {
 			kubecfg = filepath.Join(home, kubecfg)
 		}
-		log.Infof("Falling back to kubeconfig: %q", kubecfg)
+		logger.Infof("Falling back to kubeconfig: %q", kubecfg)
 		rCfg, err = clientcmd.BuildConfigFromFlags("", kubecfg)
 		if err != nil {
 			return nil, err
@@ -89,7 +95,7 @@ func New(cfg Config) (*KubeDTN, error) {
 }
 
 func (m *KubeDTN) Serve() error {
-	log.Infof("GRPC server has started on port: %d", m.config.Port)
+	logger.Infof("GRPC server has started on port: %d", m.config.Port)
 	return m.s.Serve(m.lis)
 }
 

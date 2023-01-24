@@ -14,6 +14,12 @@ import (
 	pb "github.com/y-young/kube-dtn/proto/v1"
 )
 
+var vxlanLogger *log.Entry = nil
+
+func InitLogger() {
+	vxlanLogger = log.WithFields(log.Fields{"daemon": "kubedtnd", "overlay": "vxLAN"})
+}
+
 // CreateOrUpdate creates or updates the vxlan on the node.
 func CreateOrUpdate(v *pb.RemotePod) (*api.VEth, error) {
 	/// Looking up default interface
@@ -39,7 +45,7 @@ func CreateOrUpdate(v *pb.RemotePod) (*api.VEth, error) {
 			Mask: ipSubnet.Mask,
 		}}
 	}
-	log.Infof("Created koko Veth struct %+v", veth)
+	vxlanLogger.Infof("Created koko Veth struct %+v", veth)
 
 	// Creating koko vxlan struct
 	vxlan := api.VxLan{
@@ -47,28 +53,28 @@ func CreateOrUpdate(v *pb.RemotePod) (*api.VEth, error) {
 		IPAddr:   net.ParseIP(v.PeerVtep),
 		ID:       int(v.Vni),
 	}
-	log.Infof("Created koko vxlan struct %+v", vxlan)
+	vxlanLogger.Infof("Created koko vxlan struct %+v", vxlan)
 
 	// Try to read interface attributes from netlink
 	link := getLinkFromNS(veth.NsName, veth.LinkName)
-	log.Infof("Retrieved %s link from %s Netns: %+v", veth.LinkName, veth.NsName, link)
+	vxlanLogger.Infof("Retrieved %s link from %s Netns: %+v", veth.LinkName, veth.NsName, link)
 
 	// Check if interface already exists
 	vxlanLink, ok := link.(*netlink.Vxlan)
-	log.Infof("Is link %+v a VXLAN?: %s", vxlanLink, strconv.FormatBool(ok))
+	vxlanLogger.Infof("Is link %+v a VXLAN?: %s", vxlanLink, strconv.FormatBool(ok))
 	if ok { // the link we've found is a vxlan link
 
 		if !(vxlanLink.VxlanId == vxlan.ID && vxlanLink.Group.Equal(vxlan.IPAddr)) { // If Vxlan attrs are different
 
 			// We remove the existing link and add a new one
-			log.Infof("Vxlan attrs are different: %d!=%d or %v!=%v", vxlanLink.VxlanId, vxlan.ID, vxlanLink.Group, vxlan.IPAddr)
+			vxlanLogger.Infof("Vxlan attrs are different: %d!=%d or %v!=%v", vxlanLink.VxlanId, vxlan.ID, vxlanLink.Group, vxlan.IPAddr)
 			if err = veth.RemoveVethLink(); err != nil {
 				return nil, fmt.Errorf("kubedtnd: Error when removing an old Vxlan interface with koko: %s", err)
 			}
 
 			if err = api.MakeVxLan(veth, vxlan); err != nil {
 				if strings.Contains(err.Error(), "file exists") {
-					log.Infof("kubedtnd: Error when creating a Vxlan interface with koko, file exists")
+					vxlanLogger.Infof("kubedtnd: Error when creating a Vxlan interface with koko, file exists")
 				} else {
 					return nil, fmt.Errorf("kubedtnd: Error when re-creating a Vxlan interface with koko: %s", err)
 				}
@@ -77,22 +83,22 @@ func CreateOrUpdate(v *pb.RemotePod) (*api.VEth, error) {
 
 	} else { // the link we've found isn't a vxlan or doesn't exist
 
-		log.Infof("Link %+v we've found isn't a vxlan or doesn't exist", link)
+		vxlanLogger.Infof("Link %+v we've found isn't a vxlan or doesn't exist", link)
 		// If link exists but wasn't matched as vxlan, we need to delete it
 		if link != nil {
-			log.Infof("Attempting to remove link %+v", veth)
+			vxlanLogger.Infof("Attempting to remove link %+v", veth)
 			if err = veth.RemoveVethLink(); err != nil {
 				return nil, fmt.Errorf("kubedtnd: Error when removing an old non-Vxlan interface with koko: %s", err)
 			}
 		}
 
 		// Then we simply create a new one
-		log.Infof("Creating a VXLAN link: %v; inside the pod: %v", vxlan, veth)
+		vxlanLogger.Infof("Creating a VXLAN link: %v; inside the pod: %v", vxlan, veth)
 		if err = api.MakeVxLan(veth, vxlan); err != nil {
 			if strings.Contains(err.Error(), "file exists") {
-				log.Warnf("kubedtnd: Error when creating a Vxlan interface with koko, file exists")
+				vxlanLogger.Warnf("kubedtnd: Error when creating a Vxlan interface with koko, file exists")
 			} else {
-				log.Errorf("kubedtnd: Error when creating a new Vxlan interface with koko: %s", err)
+				vxlanLogger.Errorf("kubedtnd: Error when creating a new Vxlan interface with koko: %s", err)
 				return nil, err
 			}
 		}
@@ -117,7 +123,7 @@ func getLinkFromNS(nsName string, linkName string) netlink.Link {
 		return err
 	})
 	if err != nil {
-		log.Warnf("failed to get link: %s", linkName)
+		vxlanLogger.Warnf("failed to get link: %s", linkName)
 	}
 
 	return result

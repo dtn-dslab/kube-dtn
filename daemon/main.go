@@ -7,7 +7,9 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"github.com/y-young/kube-dtn/daemon/cni"
+	"github.com/y-young/kube-dtn/daemon/grpcwire"
 	"github.com/y-young/kube-dtn/daemon/kubedtn"
+	"github.com/y-young/kube-dtn/daemon/vxlan"
 )
 
 const (
@@ -33,6 +35,10 @@ func main() {
 		log.SetLevel(log.DebugLevel)
 		log.Debug("Verbose logging enabled")
 	}
+
+	kubedtn.InitLogger()
+	grpcwire.InitLogger()
+	vxlan.InitLogger()
 
 	m, err := kubedtn.New(kubedtn.Config{
 		Port: grpcPort,

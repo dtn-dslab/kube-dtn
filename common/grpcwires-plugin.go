@@ -16,8 +16,9 @@ import (
 )
 
 const (
-	skipStatusRetryInterval = 2 // sec
-	skipStatusRetryCount    = 5
+	skipStatusRetryInterval  = 2 // sec
+	skipStatusRetryWarnCount = 5
+	skipStatusRetryCount     = skipStatusRetryWarnCount + 5
 )
 
 func CreateGRPCChan(link *pb.Link, localPod *pb.Pod, peerPod *pb.Pod, server pb.LocalServer, ctx context.Context) error {
@@ -41,7 +42,7 @@ func CreateGRPCChan(link *pb.Link, localPod *pb.Pod, peerPod *pb.Pod, server pb.
 	})
 
 	if err != nil {
-		log.Infof("Failed to read skipped status for pd %s", localPod.Name)
+		log.Errorf("Failed to read skipped status for local pod %s, peer pod %s", localPod.Name, peerPod.Name)
 		return err
 	}
 
@@ -75,7 +76,7 @@ func CreateGRPCChan(link *pb.Link, localPod *pb.Pod, peerPod *pb.Pod, server pb.
 			}
 			if resp.Response {
 				/* Higher priority pod has created the grpc-link.  */
-				log.Infof("This grpc wire is already set by the remote peer. Local interface id:%d", resp.PeerIntfId)
+				log.Infof("This grpc wire is already set by the remote peer. Local interface id:%d, local pod %s, peer pod %s", resp.PeerIntfId, localPod.Name, peerPod.Name)
 				return nil
 			}
 
@@ -86,13 +87,16 @@ func CreateGRPCChan(link *pb.Link, localPod *pb.Pod, peerPod *pb.Pod, server pb.
 				KubeNs: localPod.KubeNs,
 			})
 			if err != nil {
-				log.Infof("Failed to read skipped status for pod %s", localPod.Name)
+				log.Errorf("Failed to read skipped status for local pod %s, peer pod %s", localPod.Name, peerPod.Name)
 				return err
 			}
 
 			if !isSkipped.Response {
-				if iteration == skipStatusRetryCount {
-					return fmt.Errorf("%s : Could not read skip status in %d try. This link between %s and %s not created", localPod.Name, skipStatusRetryCount, localPod.Name, peerPod.Name)
+				if iteration > skipStatusRetryWarnCount {
+					log.Warnf("Local pod %s is taking longer time to read skip status, skipped by peer %s.", localPod.Name, peerPod.Name)
+					if iteration == skipStatusRetryCount {
+						return fmt.Errorf("%s : Could not read skip status in %d try. This link between %s and %s not created", localPod.Name, skipStatusRetryCount, localPod.Name, peerPod.Name)
+					}
 				}
 				iteration++
 			} else {
@@ -125,13 +129,13 @@ func CreateGRPCChan(link *pb.Link, localPod *pb.Pod, peerPod *pb.Pod, server pb.
 	inConIntfNm := link.LocalIntf
 	inContainerVeth, err := MakeVeth(localPod.NetNs, inConIntfNm, link.LocalIp)
 	if err != nil {
-		log.Infof("Could not create vEth for pod %s:%s. err%v", localPod.Name, inConIntfNm, err)
+		log.Errorf("Could not create vEth for local pod %s:%s, peer pod %s, err %v", localPod.Name, inConIntfNm, peerPod.Name, err)
 		return err
 	}
 
 	respIntfName, err := server.GenerateNodeInterfaceName(ctx, &pb.GenerateNodeInterfaceNameRequest{PodIntfName: link.LocalIntf, PodName: localPod.Name})
 	if err != nil {
-		return fmt.Errorf("could create node interface: %v", err)
+		return fmt.Errorf("could not create node interface for local pod %s, peer pod %s: %v", err, localPod.Name, peerPod.Name)
 	}
 
 	hostEndVeth := &koko.VEth{
