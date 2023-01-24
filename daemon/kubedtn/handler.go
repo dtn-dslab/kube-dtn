@@ -314,7 +314,7 @@ func (m *KubeDTN) SendToOnce(ctx context.Context, pkt *pb.Packet) (*pb.BoolRespo
 
 	wrHandle, err := grpcwire.GetHostIntfHndl(pkt.RemotIntfId)
 	if err != nil {
-		log.Printf("SendToOnce (wire id - %v): Could not find local handle. err:%v", pkt.RemotIntfId, err)
+		log.Errorf("SendToOnce (wire id - %v): Could not find local handle. err:%v", pkt.RemotIntfId, err)
 		return &pb.BoolResponse{Response: false}, err
 	}
 
@@ -325,7 +325,7 @@ func (m *KubeDTN) SendToOnce(ctx context.Context, pkt *pb.Packet) (*pb.BoolRespo
 
 	err = wrHandle.WritePacketData(pkt.Frame)
 	if err != nil {
-		log.Printf("SendToOnce (wire id - %v): Could not write packet(%d bytes) to local interface. err:%v", pkt.RemotIntfId, len(pkt.Frame), err)
+		log.Errorf("SendToOnce (wire id - %v): Could not write packet(%d bytes) to local interface. err:%v", pkt.RemotIntfId, len(pkt.Frame), err)
 		return &pb.BoolResponse{Response: false}, err
 	}
 
@@ -400,7 +400,7 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 	}
 
 	// Initialising peer pod's metadata
-	log.Infof("Retrieving peer pod %s information from KubeDTN daemon", link.PeerPod)
+	log.Infof("Pod %s is retrieving peer pod %s information from KubeDTN daemon", localPod.Name, link.PeerPod)
 	peerPod, err := m.Get(ctx, &pb.PodQuery{
 		Name:   link.PeerPod,
 		KubeNs: localPod.KubeNs,
