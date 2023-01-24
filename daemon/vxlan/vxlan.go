@@ -15,11 +15,11 @@ import (
 )
 
 // CreateOrUpdate creates or updates the vxlan on the node.
-func CreateOrUpdate(v *pb.RemotePod) error {
+func CreateOrUpdate(v *pb.RemotePod) (*api.VEth, error) {
 	/// Looking up default interface
 	_, srcIntf, err := getSource()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Creating koko Veth struct
@@ -32,7 +32,7 @@ func CreateOrUpdate(v *pb.RemotePod) error {
 	if v.IntfIp != "" {
 		ipAddr, ipSubnet, err := net.ParseCIDR(v.IntfIp)
 		if err != nil {
-			return fmt.Errorf("kubedtnd: Error parsing CIDR %s: %s", v.IntfIp, err)
+			return nil, fmt.Errorf("kubedtnd: Error parsing CIDR %s: %s", v.IntfIp, err)
 		}
 		veth.IPAddr = []net.IPNet{{
 			IP:   ipAddr,
@@ -63,14 +63,14 @@ func CreateOrUpdate(v *pb.RemotePod) error {
 			// We remove the existing link and add a new one
 			log.Infof("Vxlan attrs are different: %d!=%d or %v!=%v", vxlanLink.VxlanId, vxlan.ID, vxlanLink.Group, vxlan.IPAddr)
 			if err = veth.RemoveVethLink(); err != nil {
-				return fmt.Errorf("kubedtnd: Error when removing an old Vxlan interface with koko: %s", err)
+				return nil, fmt.Errorf("kubedtnd: Error when removing an old Vxlan interface with koko: %s", err)
 			}
 
 			if err = api.MakeVxLan(veth, vxlan); err != nil {
 				if strings.Contains(err.Error(), "file exists") {
 					log.Infof("kubedtnd: Error when creating a Vxlan interface with koko, file exists")
 				} else {
-					return fmt.Errorf("kubedtnd: Error when re-creating a Vxlan interface with koko: %s", err)
+					return nil, fmt.Errorf("kubedtnd: Error when re-creating a Vxlan interface with koko: %s", err)
 				}
 			}
 		} // If Vxlan attrs are the same, do nothing
@@ -82,7 +82,7 @@ func CreateOrUpdate(v *pb.RemotePod) error {
 		if link != nil {
 			log.Infof("Attempting to remove link %+v", veth)
 			if err = veth.RemoveVethLink(); err != nil {
-				return fmt.Errorf("kubedtnd: Error when removing an old non-Vxlan interface with koko: %s", err)
+				return nil, fmt.Errorf("kubedtnd: Error when removing an old non-Vxlan interface with koko: %s", err)
 			}
 		}
 
@@ -93,12 +93,12 @@ func CreateOrUpdate(v *pb.RemotePod) error {
 				log.Warnf("kubedtnd: Error when creating a Vxlan interface with koko, file exists")
 			} else {
 				log.Errorf("kubedtnd: Error when creating a new Vxlan interface with koko: %s", err)
-				return err
+				return nil, err
 			}
 		}
 	}
 
-	return nil
+	return &veth, nil
 }
 
 // getLinkFromNS retrieves netlink.Link from NetNS

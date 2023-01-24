@@ -17,6 +17,7 @@ limitations under the License.
 package v1
 
 import (
+	pb "github.com/y-young/kube-dtn/proto/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -136,6 +137,24 @@ type LinkProperties struct {
 	// Corrupt correlation in float percentage
 	// +optional
 	CorruptCorr string `json:"corrupt_corr,omitempty"`
+}
+
+func (p *LinkProperties) ToProto() *pb.LinkProperties {
+	return &pb.LinkProperties{
+		Latency:       p.Latency,
+		LatencyCorr:   p.LatencyCorr,
+		Jitter:        p.Jitter,
+		Loss:          p.Loss,
+		LossCorr:      p.LossCorr,
+		Rate:          p.Rate,
+		Gap:           p.Gap,
+		Duplicate:     p.Duplicate,
+		DuplicateCorr: p.DuplicateCorr,
+		ReorderProb:   p.ReorderProb,
+		ReorderCorr:   p.ReorderCorr,
+		CorruptProb:   p.CorruptProb,
+		CorruptCorr:   p.CorruptCorr,
+	}
 }
 
 //+kubebuilder:object:root=true

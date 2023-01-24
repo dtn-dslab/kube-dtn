@@ -56,27 +56,13 @@ func (m *KubeDTN) Get(ctx context.Context, pod *pb.PodQuery) (*pb.Pod, error) {
 	for i := range links {
 		remoteLink := remoteLinks[i]
 		newLink := &pb.Link{
-			PeerPod:   remoteLink.PeerPod,
-			PeerIntf:  remoteLink.PeerIntf,
-			LocalIntf: remoteLink.LocalIntf,
-			LocalIp:   remoteLink.LocalIP,
-			PeerIp:    remoteLink.PeerIP,
-			Uid:       int64(remoteLink.UID),
-			Properties: &pb.LinkProperties{
-				Latency:       remoteLink.Properties.Latency,
-				LatencyCorr:   remoteLink.Properties.LatencyCorr,
-				Jitter:        remoteLink.Properties.Jitter,
-				Loss:          remoteLink.Properties.Loss,
-				LossCorr:      remoteLink.Properties.LossCorr,
-				Rate:          remoteLink.Properties.Rate,
-				Gap:           remoteLink.Properties.Gap,
-				Duplicate:     remoteLink.Properties.Duplicate,
-				DuplicateCorr: remoteLink.Properties.DuplicateCorr,
-				ReorderProb:   remoteLink.Properties.ReorderProb,
-				ReorderCorr:   remoteLink.Properties.ReorderCorr,
-				CorruptProb:   remoteLink.Properties.CorruptProb,
-				CorruptCorr:   remoteLink.Properties.CorruptCorr,
-			},
+			PeerPod:    remoteLink.PeerPod,
+			PeerIntf:   remoteLink.PeerIntf,
+			LocalIntf:  remoteLink.LocalIntf,
+			LocalIp:    remoteLink.LocalIP,
+			PeerIp:     remoteLink.PeerIP,
+			Uid:        int64(remoteLink.UID),
+			Properties: remoteLink.Properties.ToProto(),
 		}
 		links[i] = newLink
 	}
@@ -248,9 +234,22 @@ func (m *KubeDTN) IsSkipped(ctx context.Context, skip *pb.SkipQuery) (*pb.BoolRe
 }
 
 func (m *KubeDTN) Update(ctx context.Context, pod *pb.RemotePod) (*pb.BoolResponse, error) {
-	if err := vxlan.CreateOrUpdate(pod); err != nil {
+	var veth *koko.VEth
+	var err error
+	if veth, err = vxlan.CreateOrUpdate(pod); err != nil {
 		log.Errorf("Failed to Update Vxlan")
 		return &pb.BoolResponse{Response: false}, nil
+	}
+
+	qdiscs, err := common.MakeQdiscs(pod.Properties)
+	if err != nil {
+		log.Errorf("Failed to construct qdiscs: %s", err)
+		return &pb.BoolResponse{Response: false}, err
+	}
+	err = common.SetVethQdiscs(veth, qdiscs)
+	if err != nil {
+		log.Errorf("Failed to set qdisc on remote veth %s: %v", veth, err)
+		return &pb.BoolResponse{Response: false}, err
 	}
 	return &pb.BoolResponse{Response: true}, nil
 }
@@ -506,19 +505,20 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 					return err
 				}
 			}
-			if err = koko.MakeVxLan(*myVeth, *vxlan); err != nil {
+			if err = m.makeVxLan(myVeth, vxlan, link); err != nil {
 				log.Infof("Error when creating a Vxlan interface with koko: %s", err)
 				return err
 			}
 
 			// Now we need to make an API call to update the remote VTEP to point to us
 			payload := &pb.RemotePod{
-				NetNs:    peerPod.NetNs,
-				IntfName: link.PeerIntf,
-				IntfIp:   link.PeerIp,
-				PeerVtep: localPod.SrcIp,
-				Vni:      link.Uid + common.VxlanBase,
-				KubeNs:   localPod.KubeNs,
+				NetNs:      peerPod.NetNs,
+				IntfName:   link.PeerIntf,
+				IntfIp:     link.PeerIp,
+				PeerVtep:   localPod.SrcIp,
+				Vni:        link.Uid + common.VxlanBase,
+				KubeNs:     localPod.KubeNs,
+				Properties: link.Properties,
 			}
 
 			url := fmt.Sprintf("%s:%s", peerPod.SrcIp, common.DefaultPort)
@@ -573,6 +573,24 @@ func (m *KubeDTN) makeVeth(self *koko.VEth, peer *koko.VEth, link *pb.Link) erro
 	err = common.SetVethQdiscs(peer, qdiscs)
 	if err != nil {
 		log.Errorf("Failed to set qdisc on peer veth %s: %v", self, err)
+		return err
+	}
+	return nil
+}
+
+func (m *KubeDTN) makeVxLan(self *koko.VEth, vxlan *koko.VxLan, link *pb.Link) error {
+	err := koko.MakeVxLan(*self, *vxlan)
+	if err != nil {
+		return err
+	}
+	qdiscs, err := common.MakeQdiscs(link.Properties)
+	if err != nil {
+		log.Errorf("Failed to construct qdiscs: %s", err)
+		return err
+	}
+	err = common.SetVethQdiscs(self, qdiscs)
+	if err != nil {
+		log.Errorf("Failed to set qdisc on self veth %s: %v", self, err)
 		return err
 	}
 	return nil
