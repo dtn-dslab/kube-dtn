@@ -42,6 +42,8 @@ items:
       peer_intf: eth2
       local_ip: 23.23.23.2/24
       peer_ip: 23.23.23.3/24
+      properties:
+        latency: 50ms
 - apiVersion: y-young.github.io/v1
   kind: Topology
   metadata:
@@ -60,6 +62,8 @@ items:
       peer_intf: eth2
       local_ip: 23.23.23.3/24
       peer_ip: 23.23.23.2/24
+      properties:
+        latency: 50ms
 - apiVersion: v1
   kind: Pod
   metadata:
@@ -91,6 +95,7 @@ items:
     labels:
       test: latency
   spec: 
+    nodeName: worker
     containers: 
     - image: alpine
       name: pod
