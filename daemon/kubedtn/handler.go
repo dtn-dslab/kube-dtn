@@ -185,7 +185,7 @@ func (m *KubeDTN) SkipReverse(ctx context.Context, skip *pb.SkipQuery) (*pb.Bool
 
 		for _, el := range thisSkipped {
 			if el != skip.Peer {
-				log.Errorf("Appending new element %s", el)
+				log.Infof("Appending new element %s", el)
 				newThisSkipped = append(newThisSkipped, el)
 			}
 		}
@@ -344,8 +344,8 @@ func (m *KubeDTN) AddGRPCWireRemote(ctx context.Context, wireDef *pb.WireDef) (*
 
 		return &pb.WireCreateResponse{Response: true, PeerIntfId: wire.LocalNodeIfaceID}, nil
 	}
-	log.Errorf("AddWireRemote err : %v", err)
-	return &pb.WireCreateResponse{Response: false, PeerIntfId: wire.LocalNodeIfaceID}, err
+	log.Errorf("AddWireRemote err: %v", err)
+	return &pb.WireCreateResponse{Response: false, PeerIntfId: wireDef.PeerIntfId}, err
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -353,7 +353,7 @@ func (m *KubeDTN) AddGRPCWireRemote(ctx context.Context, wireDef *pb.WireDef) (*
 func (m *KubeDTN) GRPCWireExists(ctx context.Context, wireDef *pb.WireDef) (*pb.WireCreateResponse, error) {
 	wire, ok := grpcwire.GetWireByUID(wireDef.LocalPodNetNs, int(wireDef.LinkUid))
 	if !ok || wire == nil {
-		return &pb.WireCreateResponse{Response: false, PeerIntfId: 0}, nil
+		return &pb.WireCreateResponse{Response: false, PeerIntfId: wireDef.PeerIntfId}, nil
 	}
 	return &pb.WireCreateResponse{Response: ok, PeerIntfId: wire.PeerIfaceID}, nil
 }

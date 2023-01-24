@@ -12,6 +12,7 @@ import (
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/pcap"
+	"github.com/openconfig/gnmi/errlist"
 	koko "github.com/redhat-nfvpe/koko/api"
 	log "github.com/sirupsen/logrus"
 	pb "github.com/y-young/kube-dtn/proto/v1"
@@ -25,8 +26,7 @@ type intfIndex struct {
 }
 
 /*
-	In a given node a veth-pair connects a pod with the meshnet daemon hosted in the node. This meshnet
-
+In a given node a veth-pair connects a pod with the meshnet daemon hosted in the node. This meshnet
 daemon provides the grpc-wire service to connect the local pod with the remote pod over grpc. The node
 end of the veth-pair must have unique name with in the node. A node can have multiple pods. So there
 will be multiple veth-pairs for connecting multiple nodes to meshnet daemon and each of them (the node end) must have unique
@@ -194,7 +194,6 @@ func DeleteWire(wire *GRPCWire) int {
 //-----------------------------------------------------------------------------------------------------------
 
 func DeleteWiresByPod(namespace string, podName string) error {
-
 	log.Infof("Removing grpc-wire for pod %s:%s", namespace, podName)
 	wires, ok := GetWiresByPod(namespace, podName)
 	if !ok || len(wires) == 0 {
@@ -202,25 +201,18 @@ func DeleteWiresByPod(namespace string, podName string) error {
 		return nil
 	}
 
-	resp := true
-	var fstErr error
+	var errs errlist.List
 	for _, w := range wires {
 		if err := RemoveWire(w); err != nil {
-			log.Infof("Error while removing GRPC wire for  pod: %s@%s. err:%v", w.LocalPodIfaceName, w.LocalPodName, err)
-			// instead of failing, just log the error and move on
-			resp = false
-			if fstErr == nil {
-				fstErr = err
-				// even if we have an error for this link, we still try to remove the other links
-			}
-		}
-		if resp {
-			log.Infof("Removed all grpc-wire for pod: %s@%s", w.LocalPodIfaceName, w.LocalPodName)
+			log.Infof("Error removing grpc-wire for pod %s@%s: %v", w.LocalPodIfaceName, w.LocalPodName, err)
+			errs.Add(err)
 		}
 	}
-
-	// only reports the first error
-	return fmt.Errorf("failed to remove gRPC wire for pod %s: %w", podName, fstErr)
+	if errs.Err() != nil {
+		return fmt.Errorf("failed to remove all grpc-wires for pod %s:%s: %w", namespace, podName, errs.Err())
+	}
+	log.Infof("Successfully removed all grpc-wires for pod %s:%s", namespace, podName)
+	return nil
 }
 
 // ----------------------------------------------------------------------------------------------------------
@@ -232,7 +224,7 @@ func RemoveWire(wire *GRPCWire) error {
 	/* Remove the veth from the node */
 	intf, err := net.InterfaceByIndex(int(wire.LocalNodeIfaceID))
 	if err != nil {
-		return fmt.Errorf("failed to etrieve interface data for interface index %d, for link %d: %w", wire.LocalNodeIfaceID, wire.UID, err)
+		return fmt.Errorf("failed to retrieve interface data for interface index %d, for link %d: %w", wire.LocalNodeIfaceID, wire.UID, err)
 	}
 	myVeth := koko.VEth{}
 	myVeth.LinkName = intf.Name
