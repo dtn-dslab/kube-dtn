@@ -293,7 +293,7 @@ func (m *KubeDTN) AddGRPCWireLocal(ctx context.Context, wireDef *pb.WireDef) (*p
 		LocalPodNetNS:      wireDef.LocalPodNetNs,
 
 		PeerIfaceID: wireDef.PeerIntfId,
-		PeerPodIP:   wireDef.PeerIp,
+		PeerNodeIP:  wireDef.PeerIp,
 
 		Originator:   grpcwire.HOST_CREATED_WIRE,
 		OriginatorIP: "unknown", /*+++todo retrieve host ip and set it here. Needed only for debugging */

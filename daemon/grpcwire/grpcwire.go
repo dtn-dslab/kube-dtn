@@ -80,9 +80,9 @@ type GRPCWire struct {
 	LocalPodIfaceName string // Name the interface which is inside the local pod who will consume packets over this wire. This is for debugging
 	LocalPodNetNS     string
 
-	/*Peer pod information*/
+	/* Peer pod information */
 	PeerIfaceID int64  // Peer node interface ID
-	PeerPodIP   string // Peer pod IP
+	PeerNodeIP  string // Peer node IP
 
 	IsReady      bool               // Is this wire ip.
 	Originator   grpcWireOriginator // create by local host or create on trigger from remote host. This is for debugging.
@@ -355,7 +355,7 @@ func CreateGRPCWireRemoteTriggered(wireDef *pb.WireDef, stopC chan struct{}) (*G
 		LocalPodNetNS:      wireDef.LocalPodNetNs,
 
 		PeerIfaceID: wireDef.PeerIntfId,
-		PeerPodIP:   wireDef.PeerIp,
+		PeerNodeIP:  wireDef.PeerIp,
 
 		IsReady:      true,
 		Originator:   PEER_CREATED_WIRE,
@@ -387,7 +387,7 @@ func RecvFrmLocalPodThread(wire *GRPCWire) error {
 	defaultPort := "51111"             //+++todo: use proper constant as defined in some other file
 	pktBuffSz := int32(1024 * 64 * 10) //keep buffer for MAX 10 64K frames
 
-	url := strings.TrimSpace(fmt.Sprintf("%s:%s", wire.PeerPodIP, defaultPort))
+	url := strings.TrimSpace(fmt.Sprintf("%s:%s", wire.PeerNodeIP, defaultPort))
 	/* Utilizing google gopacket for polling for packets from the node. This seems to be the
 	   simplest way to get all packets.
 	   As an alternative to google gopacket(pcap), a socket based implementation is possible.
@@ -426,7 +426,7 @@ func RecvFrmLocalPodThread(wire *GRPCWire) error {
 	for {
 		select {
 		case <-wire.StopC:
-			grpcLogger.Infof("RecvFrmLocalPodThread: closing connection with remote peer-iface@peer-node-ip: %d@%s", wire.PeerIfaceID, wire.PeerPodIP)
+			grpcLogger.Infof("RecvFrmLocalPodThread: closing connection with remote peer-iface@peer-node-ip: %d@%s", wire.PeerIfaceID, wire.PeerNodeIP)
 			return io.EOF
 		case packet = <-in:
 			data := packet.Data()
