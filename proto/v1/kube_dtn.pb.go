@@ -25,12 +25,14 @@ type Pod struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Name   string  `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// IP of the node on which the pod is running.
 	SrcIp  string  `protobuf:"bytes,2,opt,name=src_ip,json=srcIp,proto3" json:"src_ip,omitempty"`
 	NetNs  string  `protobuf:"bytes,3,opt,name=net_ns,json=netNs,proto3" json:"net_ns,omitempty"`
 	KubeNs string  `protobuf:"bytes,4,opt,name=kube_ns,json=kubeNs,proto3" json:"kube_ns,omitempty"`
 	Links  []*Link `protobuf:"bytes,5,rep,name=links,proto3" json:"links,omitempty"`
-	NodeIp string  `protobuf:"bytes,6,opt,name=node_ip,json=nodeIp,proto3" json:"node_ip,omitempty"`
+	// IP of the node on which the daemon is running.
+	NodeIp string `protobuf:"bytes,6,opt,name=node_ip,json=nodeIp,proto3" json:"node_ip,omitempty"`
 }
 
 func (x *Pod) Reset() {

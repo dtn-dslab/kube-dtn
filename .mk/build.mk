@@ -18,3 +18,7 @@ cni-docker:
 	--tag ${CNI_IMG}:${COMMIT} \
 	-f docker/Dockerfile.cni \
 	.
+
+## Build CLI
+cmd-build:
+	CGO_ENABLED=1 GOOS=linux go build -o bin/kubedtn-cli github.com/y-young/kube-dtn/cmd

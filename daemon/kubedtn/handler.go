@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strings"
 
 	v1 "github.com/y-young/kube-dtn/api/v1"
 	"github.com/y-young/kube-dtn/daemon/grpcwire"
@@ -13,8 +14,6 @@ import (
 	"github.com/davecgh/go-spew/spew"
 	koko "github.com/redhat-nfvpe/koko/api"
 	log "github.com/sirupsen/logrus"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/util/retry"
 
@@ -403,6 +402,30 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 		return nil
 	}
 
+	// Physical-virtual link
+	if strings.HasPrefix(link.PeerPod, "physical/") {
+		srcIp := strings.TrimPrefix(link.PeerPod, "physical/")
+		logger.Infof("Peer pod is physical host %s", srcIp)
+		// Update local pod on behalf of the physical host
+		// localPod is K8s pod, peerPod is physical host
+		payload := &pb.RemotePod{
+			NetNs:      localPod.NetNs,
+			IntfName:   link.LocalIntf,
+			IntfIp:     link.LocalIp,
+			PeerVtep:   srcIp,
+			Vni:        link.Uid + common.VxlanBase,
+			KubeNs:     localPod.KubeNs,
+			Properties: link.Properties,
+		}
+		response, err := m.Update(ctx, payload)
+		if !response.Response || err != nil {
+			return err
+		}
+		logger.Info("Successfully established physical-virtual link")
+		return nil
+	}
+
+	// Virtual-virtual link
 	// Initialising peer pod's metadata
 	logger.Infof("Pod %s is retrieving peer pod %s information from KubeDTN daemon", localPod.Name, link.PeerPod)
 	peerPod, err := m.Get(ctx, &pb.PodQuery{
@@ -509,34 +532,14 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 					return err
 				}
 			}
-			if err = m.makeVxLan(myVeth, vxlan, link); err != nil {
+			if err = common.MakeVxLan(myVeth, vxlan, link); err != nil {
 				logger.Infof("Error when creating a Vxlan interface with koko: %s", err)
 				return err
 			}
 
 			// Now we need to make an API call to update the remote VTEP to point to us
-			payload := &pb.RemotePod{
-				NetNs:      peerPod.NetNs,
-				IntfName:   link.PeerIntf,
-				IntfIp:     link.PeerIp,
-				PeerVtep:   localPod.SrcIp,
-				Vni:        link.Uid + common.VxlanBase,
-				KubeNs:     localPod.KubeNs,
-				Properties: link.Properties,
-			}
-
-			url := fmt.Sprintf("%s:%s", peerPod.SrcIp, common.DefaultPort)
-			logger.Infof("Trying to do a remote update on %s", url)
-
-			remote, err := grpc.Dial(url, grpc.WithTransportCredentials(insecure.NewCredentials()))
+			err = common.UpdateRemote(ctx, localPod, peerPod, link)
 			if err != nil {
-				logger.Infof("Failed to dial remote gRPC url %s", url)
-				return err
-			}
-			remoteClient := pb.NewRemoteClient(remote)
-			ok, err := remoteClient.Update(ctx, payload)
-			if err != nil || !ok.Response {
-				logger.Infof("Failed to do a remote update")
 				return err
 			}
 			logger.Infof("Successfully updated remote KubeDTN daemon")
@@ -577,24 +580,6 @@ func (m *KubeDTN) makeVeth(self *koko.VEth, peer *koko.VEth, link *pb.Link) erro
 	err = common.SetVethQdiscs(peer, qdiscs)
 	if err != nil {
 		logger.Errorf("Failed to set qdisc on peer veth %s: %v", self, err)
-		return err
-	}
-	return nil
-}
-
-func (m *KubeDTN) makeVxLan(self *koko.VEth, vxlan *koko.VxLan, link *pb.Link) error {
-	err := koko.MakeVxLan(*self, *vxlan)
-	if err != nil {
-		return err
-	}
-	qdiscs, err := common.MakeQdiscs(link.Properties)
-	if err != nil {
-		logger.Errorf("Failed to construct qdiscs: %s", err)
-		return err
-	}
-	err = common.SetVethQdiscs(self, qdiscs)
-	if err != nil {
-		logger.Errorf("Failed to set qdisc on self veth %s: %v", self, err)
 		return err
 	}
 	return nil

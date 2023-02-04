@@ -7,10 +7,12 @@ option go_package = "github.com/y-young/kube-dtn/v1";
 
 message Pod {
   string name = 1;
+  // IP of the node on which the pod is running.
   string src_ip = 2;
   string net_ns = 3;
   string kube_ns = 4;
   repeated Link links = 5;
+  // IP of the node on which the daemon is running.
   string node_ip = 6;
 }
 
