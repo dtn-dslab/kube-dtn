@@ -29,6 +29,8 @@ type LocalClient interface {
 	IsSkipped(ctx context.Context, in *SkipQuery, opts ...grpc.CallOption) (*BoolResponse, error)
 	AddLink(ctx context.Context, in *AddLinkQuery, opts ...grpc.CallOption) (*BoolResponse, error)
 	DelLink(ctx context.Context, in *DelLinkQuery, opts ...grpc.CallOption) (*BoolResponse, error)
+	SetupPod(ctx context.Context, in *SetupPodQuery, opts ...grpc.CallOption) (*BoolResponse, error)
+	DestroyPod(ctx context.Context, in *PodQuery, opts ...grpc.CallOption) (*BoolResponse, error)
 	GRPCWireExists(ctx context.Context, in *WireDef, opts ...grpc.CallOption) (*WireCreateResponse, error)
 	AddGRPCWireLocal(ctx context.Context, in *WireDef, opts ...grpc.CallOption) (*BoolResponse, error)
 	RemGRPCWire(ctx context.Context, in *WireDef, opts ...grpc.CallOption) (*BoolResponse, error)
@@ -109,6 +111,24 @@ func (c *localClient) DelLink(ctx context.Context, in *DelLinkQuery, opts ...grp
 	return out, nil
 }
 
+func (c *localClient) SetupPod(ctx context.Context, in *SetupPodQuery, opts ...grpc.CallOption) (*BoolResponse, error) {
+	out := new(BoolResponse)
+	err := c.cc.Invoke(ctx, "/proto.v1.Local/SetupPod", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *localClient) DestroyPod(ctx context.Context, in *PodQuery, opts ...grpc.CallOption) (*BoolResponse, error) {
+	out := new(BoolResponse)
+	err := c.cc.Invoke(ctx, "/proto.v1.Local/DestroyPod", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *localClient) GRPCWireExists(ctx context.Context, in *WireDef, opts ...grpc.CallOption) (*WireCreateResponse, error) {
 	out := new(WireCreateResponse)
 	err := c.cc.Invoke(ctx, "/proto.v1.Local/GRPCWireExists", in, out, opts...)
@@ -156,6 +176,8 @@ type LocalServer interface {
 	IsSkipped(context.Context, *SkipQuery) (*BoolResponse, error)
 	AddLink(context.Context, *AddLinkQuery) (*BoolResponse, error)
 	DelLink(context.Context, *DelLinkQuery) (*BoolResponse, error)
+	SetupPod(context.Context, *SetupPodQuery) (*BoolResponse, error)
+	DestroyPod(context.Context, *PodQuery) (*BoolResponse, error)
 	GRPCWireExists(context.Context, *WireDef) (*WireCreateResponse, error)
 	AddGRPCWireLocal(context.Context, *WireDef) (*BoolResponse, error)
 	RemGRPCWire(context.Context, *WireDef) (*BoolResponse, error)
@@ -190,6 +212,12 @@ func (UnimplementedLocalServer) AddLink(context.Context, *AddLinkQuery) (*BoolRe
 }
 func (UnimplementedLocalServer) DelLink(context.Context, *DelLinkQuery) (*BoolResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DelLink not implemented")
+}
+func (UnimplementedLocalServer) SetupPod(context.Context, *SetupPodQuery) (*BoolResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetupPod not implemented")
+}
+func (UnimplementedLocalServer) DestroyPod(context.Context, *PodQuery) (*BoolResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DestroyPod not implemented")
 }
 func (UnimplementedLocalServer) GRPCWireExists(context.Context, *WireDef) (*WireCreateResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GRPCWireExists not implemented")
@@ -342,6 +370,42 @@ func _Local_DelLink_Handler(srv interface{}, ctx context.Context, dec func(inter
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Local_SetupPod_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetupPodQuery)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(LocalServer).SetupPod(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/proto.v1.Local/SetupPod",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(LocalServer).SetupPod(ctx, req.(*SetupPodQuery))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Local_DestroyPod_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PodQuery)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(LocalServer).DestroyPod(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/proto.v1.Local/DestroyPod",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(LocalServer).DestroyPod(ctx, req.(*PodQuery))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Local_GRPCWireExists_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(WireDef)
 	if err := dec(in); err != nil {
@@ -448,6 +512,14 @@ var Local_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DelLink",
 			Handler:    _Local_DelLink_Handler,
+		},
+		{
+			MethodName: "SetupPod",
+			Handler:    _Local_SetupPod_Handler,
+		},
+		{
+			MethodName: "DestroyPod",
+			Handler:    _Local_DestroyPod_Handler,
 		},
 		{
 			MethodName: "GRPCWireExists",

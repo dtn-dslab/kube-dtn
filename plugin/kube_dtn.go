@@ -84,52 +84,21 @@ func cmdAdd(args *skel.CmdArgs) error {
 	}
 	defer conn.Close()
 
-	kubedtnClient := pb.NewLocalClient(conn)
-
-	log.Infof("Retrieving local pod information from kubedtn daemon")
-	localPod, err := kubedtnClient.Get(ctx, &pb.PodQuery{
+	client := pb.NewLocalClient(conn)
+	ok, err := client.SetupPod(ctx, &pb.SetupPodQuery{
 		Name:   string(cniArgs.K8S_POD_NAME),
 		KubeNs: string(cniArgs.K8S_POD_NAMESPACE),
+		NetNs:  args.Netns,
 	})
-	if err != nil {
-		log.Infof("Pod %s:%s was not a topology pod returning", string(cniArgs.K8S_POD_NAMESPACE), string(cniArgs.K8S_POD_NAME))
-		return types.PrintResult(result, n.CNIVersion)
-	}
 
-	// Finding the source IP and interface for VXLAN VTEP
-	srcIP, srcIntf, err := common.GetVxlanSource(localPod.NodeIp)
-	if err != nil {
-		return err
-	}
-	log.Infof("VxLan route is via %s@%s", srcIP, srcIntf)
-
-	// Marking pod as "alive" by setting its srcIP and NetNS
-	localPod.NetNs = args.Netns
-	localPod.SrcIp = srcIP
-	log.Infof("Setting pod alive status on kubedtn daemon")
-	ok, err := kubedtnClient.SetAlive(ctx, localPod)
 	if err != nil || !ok.Response {
-		log.Info("Failed to set pod alive status")
+		log.Infof("Failed to setup pod %s/%s, err: %v", string(cniArgs.K8S_POD_NAMESPACE), string(cniArgs.K8S_POD_NAME), err)
 		return err
-	}
-
-	log.Info("Starting to traverse all links")
-	for _, link := range localPod.Links { // Iterate over each link of the local pod
-		// Call daemon to add link
-		ok, err = kubedtnClient.AddLink(ctx, &pb.AddLinkQuery{
-			LocalPod: localPod,
-			Link:     link,
-		})
-		if err != nil || !ok.Response {
-			log.Infof("Failed to add link %s: %s", link.String(), err)
-			return err
-		}
 	}
 
 	return types.PrintResult(result, n.CNIVersion)
 }
 
-// -------------------------------------------------------------------------------------------------
 // Deletes interfaces from a POD
 func cmdDel(args *skel.CmdArgs) error {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -154,50 +123,22 @@ func cmdDel(args *skel.CmdArgs) error {
 	}
 	defer conn.Close()
 
-	kubedtnClient := pb.NewLocalClient(conn)
-
-	/* Tell daemon to close the grpc tunnel for this pod netns (if any) */
-	log.Infof("Retrieving pod's metadata from kubedtn daemon")
-	wireDef := pb.WireDef{
-		KubeNs:       string(cniArgs.K8S_POD_NAMESPACE),
-		LocalPodName: string(cniArgs.K8S_POD_NAME),
-	}
-
-	removResp, err := kubedtnClient.RemGRPCWire(ctx, &wireDef)
-	if err != nil || !removResp.Response {
-		return fmt.Errorf("could not remove grpc wire: %v", err)
-	}
-
-	log.Infof("Retrieving pod's (%s@%s) metadata from kubedtn daemon", string(cniArgs.K8S_POD_NAME), string(cniArgs.K8S_POD_NAMESPACE))
-	localPod, err := kubedtnClient.Get(ctx, &pb.PodQuery{
+	client := pb.NewLocalClient(conn)
+	ok, err := client.DestroyPod(ctx, &pb.PodQuery{
 		Name:   string(cniArgs.K8S_POD_NAME),
 		KubeNs: string(cniArgs.K8S_POD_NAMESPACE),
 	})
-	if err != nil {
-		log.Infof("Pod %s:%s is not in topology returning. err:%v", string(cniArgs.K8S_POD_NAMESPACE), string(cniArgs.K8S_POD_NAME), err)
-		return types.PrintResult(result, n.CNIVersion)
-	}
 
-	log.Infof("Topology data still exists in CRs, cleaning up it's status")
-	// By setting srcIP and NetNS to "" we're marking this POD as dead
-	localPod.NetNs = ""
-	localPod.SrcIp = ""
-	_, err = kubedtnClient.SetAlive(ctx, localPod)
-	if err != nil {
-		return fmt.Errorf("could not set alive: %v", err)
-	}
-
-	log.Infof("Iterating over each link for clean-up")
-	for _, link := range localPod.Links { // Iterate over each link of the local pod
-		// Call daemon to remove link
-		ok, err := kubedtnClient.DelLink(ctx, &pb.DelLinkQuery{
-			LocalPod: localPod,
-			Link:     link,
-		})
-		if err != nil || !ok.Response {
-			log.Infof("Failed to remove link %s: %s", link.String(), err)
+	if !ok.Response {
+		podName := fmt.Sprintf("%s/%s", string(cniArgs.K8S_POD_NAMESPACE), string(cniArgs.K8S_POD_NAME))
+		if err != nil {
+			log.Infof("Failed to remove pod %s, err: %v", podName, err)
 			return err
 		}
+		// Response = false but no error, meaning that the pod was not a topology pod,
+		// we should delegate the action to the next plugin
+		log.Infof("Pod %s is not in topology returning", podName)
+		return types.PrintResult(result, n.CNIVersion)
 	}
 	return nil
 }

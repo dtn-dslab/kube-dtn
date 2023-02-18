@@ -63,6 +63,12 @@ message DelLinkQuery {
   Link link = 2;
 }
 
+message SetupPodQuery {
+  string name = 1;
+  string kube_ns = 2;
+  string net_ns = 3;
+}
+
 message BoolResponse {
   bool response = 1;
 }
@@ -149,6 +155,8 @@ service Local {
   rpc IsSkipped (SkipQuery) returns (BoolResponse);
   rpc AddLink (AddLinkQuery) returns (BoolResponse);
   rpc DelLink (DelLinkQuery) returns (BoolResponse);
+  rpc SetupPod (SetupPodQuery) returns (BoolResponse);
+  rpc DestroyPod (PodQuery) returns (BoolResponse);
 
   rpc GRPCWireExists(WireDef) returns (WireCreateResponse); 
   rpc AddGRPCWireLocal(WireDef) returns (BoolResponse);
