@@ -19,6 +19,10 @@ cni-docker:
 	-f docker/Dockerfile.cni \
 	.
 
+cni-push:
+	docker tag ${CNI_IMG}:${COMMIT} registry.cn-shanghai.aliyuncs.com/gpx/kubedtn:${TAG}
+	docker push registry.cn-shanghai.aliyuncs.com/gpx/kubedtn:${TAG}
+
 ## Build CLI
 cmd-build:
 	CGO_ENABLED=1 GOOS=linux go build -o bin/kubedtn-cli github.com/y-young/kube-dtn/cmd

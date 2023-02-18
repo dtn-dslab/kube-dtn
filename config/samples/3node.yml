@@ -62,7 +62,7 @@ items:
     name: r1
     labels:
       test: 3node
-  spec: 
+  spec:
     containers: 
     - image: alpine
       name: pod
@@ -73,8 +73,8 @@ items:
     name: r2
     labels:
       test: 3node
-  spec: 
-    containers: 
+  spec:
+    containers:
     - image: alpine
       name: pod
       command:  ["/bin/sh", "-c", "sleep 2000000000000"]
