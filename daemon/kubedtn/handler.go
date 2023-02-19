@@ -81,12 +81,17 @@ func (m *KubeDTN) Get(ctx context.Context, pod *pb.PodQuery) (*pb.Pod, error) {
 }
 
 func (m *KubeDTN) SetAlive(ctx context.Context, pod *pb.Pod) (*pb.BoolResponse, error) {
-	logger.Infof("Setting %s's SrcIp=%s and NetNs=%s", pod.Name, pod.SrcIp, pod.NetNs)
+	logger = logger.WithFields(log.Fields{
+		"pod": pod.Name,
+		"ns":  pod.KubeNs,
+	})
+
+	logger.Infof("Setting SrcIp=%s and NetNs=%s", pod.SrcIp, pod.NetNs)
 
 	retryErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		topology, err := m.getPod(ctx, pod.Name, pod.KubeNs)
 		if err != nil {
-			logger.Errorf("Failed to read pod %s from K8s", pod.Name)
+			logger.Errorf("Failed to read pod from K8s")
 			return err
 		}
 
@@ -100,7 +105,7 @@ func (m *KubeDTN) SetAlive(ctx context.Context, pod *pb.Pod) (*pb.BoolResponse, 
 		logger.WithFields(log.Fields{
 			"err":      retryErr,
 			"function": "SetAlive",
-		}).Errorf("Failed to update pod %s alive status", pod.Name)
+		}).Errorf("Failed to update pod alive status")
 		return &pb.BoolResponse{Response: false}, retryErr
 	}
 
@@ -108,12 +113,17 @@ func (m *KubeDTN) SetAlive(ctx context.Context, pod *pb.Pod) (*pb.BoolResponse, 
 }
 
 func (m *KubeDTN) Skip(ctx context.Context, skip *pb.SkipQuery) (*pb.BoolResponse, error) {
-	logger.Infof("Skipping of pod %s by pod %s", skip.Peer, skip.Pod)
+	logger = logger.WithFields(log.Fields{
+		"pod": skip.Pod,
+		"ns":  skip.KubeNs,
+	})
+
+	logger.Infof("Skipping peer pod %s", skip.Peer)
 
 	retryErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		topology, err := m.getPod(ctx, skip.Pod, skip.KubeNs)
 		if err != nil {
-			logger.Errorf("Failed to read pod %s from K8s", skip.Pod)
+			logger.Errorf("Failed to read pod from K8s")
 			return err
 		}
 
@@ -127,7 +137,7 @@ func (m *KubeDTN) Skip(ctx context.Context, skip *pb.SkipQuery) (*pb.BoolRespons
 		logger.WithFields(log.Fields{
 			"err":      retryErr,
 			"function": "Skip",
-		}).Errorf("Failed to update skip pod %s status", skip.Pod)
+		}).Errorf("Failed to update skip pod status")
 		return &pb.BoolResponse{Response: false}, retryErr
 	}
 
@@ -135,14 +145,19 @@ func (m *KubeDTN) Skip(ctx context.Context, skip *pb.SkipQuery) (*pb.BoolRespons
 }
 
 func (m *KubeDTN) SkipReverse(ctx context.Context, skip *pb.SkipQuery) (*pb.BoolResponse, error) {
-	logger.Infof("Reverse-skipping of pod %s by pod %s", skip.Peer, skip.Pod)
+	logger = logger.WithFields(log.Fields{
+		"pod": skip.Pod,
+		"ns":  skip.KubeNs,
+	})
+
+	logger.Infof("Reverse-skipping peer pod %s", skip.Peer)
 
 	var podName string
 	retryErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		// setting the value for peer pod
 		peerPod, err := m.getPod(ctx, skip.Peer, skip.KubeNs)
 		if err != nil {
-			logger.Errorf("Failed to read pod %s from K8s", skip.Pod)
+			logger.Errorf("Failed to read pod from K8s")
 			return err
 		}
 		podName = peerPod.GetName()
@@ -170,7 +185,7 @@ func (m *KubeDTN) SkipReverse(ctx context.Context, skip *pb.SkipQuery) (*pb.Bool
 		// setting the value for this pod
 		thisPod, err := m.getPod(ctx, skip.Pod, skip.KubeNs)
 		if err != nil {
-			logger.Errorf("Failed to read pod %s from K8s", skip.Pod)
+			logger.Errorf("Failed to read pod from K8s")
 			return err
 		}
 
@@ -233,10 +248,16 @@ func (m *KubeDTN) IsSkipped(ctx context.Context, skip *pb.SkipQuery) (*pb.BoolRe
 }
 
 func (m *KubeDTN) Update(ctx context.Context, pod *pb.RemotePod) (*pb.BoolResponse, error) {
+	logger = logger.WithFields(log.Fields{
+		"pod": pod.Name,
+		"ns":  pod.KubeNs,
+	})
+	logger.Infof("Updating pod from remote")
+
 	var veth *koko.VEth
 	var err error
 	if veth, err = vxlan.CreateOrUpdate(pod); err != nil {
-		logger.Errorf("Failed to Update Vxlan")
+		logger.Errorf("Failed to Update VXLAN")
 		return &pb.BoolResponse{Response: false}, nil
 	}
 
@@ -335,7 +356,6 @@ func (m *KubeDTN) SendToOnce(ctx context.Context, pkt *pb.Packet) (*pb.BoolRespo
 
 // ---------------------------------------------------------------------------------------------------------------
 func (m *KubeDTN) AddGRPCWireRemote(ctx context.Context, wireDef *pb.WireDef) (*pb.WireCreateResponse, error) {
-
 	stopC := make(chan struct{})
 	wire, err := grpcwire.CreateGRPCWireRemoteTriggered(wireDef, stopC)
 
@@ -371,6 +391,12 @@ func (m *KubeDTN) GenerateNodeInterfaceName(ctx context.Context, in *pb.Generate
 }
 
 func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) error {
+	logger = logger.WithFields(log.Fields{
+		"pod":  localPod.Name,
+		"ns":   localPod.KubeNs,
+		"link": link.Uid,
+	})
+
 	nodeIP := os.Getenv("HOST_IP")
 	// Finding the source IP and interface for VXLAN VTEP
 	srcIP, srcIntf, err := common.GetVxlanSource(nodeIP)
@@ -414,6 +440,7 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 			Vni:        link.Uid + common.VxlanBase,
 			KubeNs:     localPod.KubeNs,
 			Properties: link.Properties,
+			Name:       link.PeerPod,
 		}
 		response, err := m.Update(ctx, payload)
 		if !response.Response || err != nil {
@@ -425,13 +452,13 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 
 	// Virtual-virtual link
 	// Initialising peer pod's metadata
-	logger.Infof("Pod %s is retrieving peer pod %s information from KubeDTN daemon", localPod.Name, link.PeerPod)
+	logger.Infof("Retrieving peer pod %s information", link.PeerPod)
 	peerPod, err := m.Get(ctx, &pb.PodQuery{
 		Name:   link.PeerPod,
 		KubeNs: localPod.KubeNs,
 	})
 	if err != nil {
-		logger.Infof("Failed to retrieve peer pod %s:%s topology", localPod.KubeNs, link.PeerPod)
+		logger.Infof("Failed to retrieve peer pod %s/%s topology", localPod.KubeNs, link.PeerPod)
 		return err
 	}
 
@@ -453,7 +480,7 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 			iExist, _ := koko.IsExistLinkInNS(myVeth.NsName, myVeth.LinkName)
 			pExist, _ := koko.IsExistLinkInNS(peerVeth.NsName, peerVeth.LinkName)
 
-			logger.Infof("Does the link already exist? Local:%t, Peer:%t", iExist, pExist)
+			logger.Infof("Does the link already exist? Local: %t, Peer: %t", iExist, pExist)
 			if iExist && pExist { // If both link exist, we don't need to do anything
 				logger.Info("Both interfaces already exist in namespace")
 			} else if !iExist && pExist { // If only peer link exists, we need to destroy it first
@@ -584,6 +611,12 @@ func (m *KubeDTN) makeVeth(self *koko.VEth, peer *koko.VEth, link *pb.Link) erro
 }
 
 func (m *KubeDTN) delLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) error {
+	logger = logger.WithFields(log.Fields{
+		"pod":  localPod.Name,
+		"ns":   localPod.KubeNs,
+		"link": link.Uid,
+	})
+
 	// Creating koko's Veth struct for local intf
 	myVeth, err := common.MakeVeth(localPod.NetNs, link.LocalIntf, link.LocalIp)
 	if err != nil {
@@ -615,13 +648,18 @@ func (m *KubeDTN) delLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 
 // Setup a pod, adding all its VXLAN VTEPs and links
 func (m *KubeDTN) SetupPod(ctx context.Context, pod *pb.SetupPodQuery) (*pb.BoolResponse, error) {
-	logger.Infof("Retrieving local pod information")
+	logger = logger.WithFields(log.Fields{
+		"pod": pod.Name,
+		"ns":  pod.KubeNs,
+	})
+	logger.Infof("Setting up pod")
+
 	localPod, err := m.Get(ctx, &pb.PodQuery{
 		Name:   string(pod.Name),
 		KubeNs: string(pod.KubeNs),
 	})
 	if err != nil {
-		logger.Infof("Pod %s/%s is not in topology returning. err: %v", string(pod.KubeNs), string(pod.Name), err)
+		logger.Infof("Pod is not in topology returning. err: %v", err)
 		// Pod is not be in topology, the CNI plugin should delegate the action to the next plugin
 		return &pb.BoolResponse{Response: true}, nil
 	}
@@ -660,6 +698,12 @@ func (m *KubeDTN) SetupPod(ctx context.Context, pod *pb.SetupPodQuery) (*pb.Bool
 
 // Destroy a pod, removing all its GRPC wires and links, the reverse process of SetupPod
 func (m *KubeDTN) DestroyPod(ctx context.Context, pod *pb.PodQuery) (*pb.BoolResponse, error) {
+	logger = logger.WithFields(log.Fields{
+		"pod": pod.Name,
+		"ns":  pod.KubeNs,
+	})
+	logger.Infof("Destroying pod")
+
 	// Close the grpc tunnel for this pod netns (if any)
 	wireDef := pb.WireDef{
 		KubeNs:       string(pod.KubeNs),
@@ -671,13 +715,12 @@ func (m *KubeDTN) DestroyPod(ctx context.Context, pod *pb.PodQuery) (*pb.BoolRes
 		return &pb.BoolResponse{Response: false}, fmt.Errorf("could not remove grpc wire: %v", err)
 	}
 
-	logger.Infof("Retrieving pod %s/%s", string(pod.KubeNs), string(pod.Name))
 	localPod, err := m.Get(ctx, &pb.PodQuery{
 		Name:   string(pod.Name),
 		KubeNs: string(pod.KubeNs),
 	})
 	if err != nil {
-		logger.Infof("Pod %s/%s is not in topology returning. err: %v", string(pod.KubeNs), string(pod.Name), err)
+		logger.Infof("Pod is not in topology returning. err: %v", err)
 		// Pod is not be in topology, the CNI plugin should delegate the action to the next plugin
 		// This is a special combination of return values
 		return &pb.BoolResponse{Response: false}, nil

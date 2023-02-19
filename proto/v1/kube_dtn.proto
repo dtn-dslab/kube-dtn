@@ -74,13 +74,19 @@ message BoolResponse {
 }
 
 message RemotePod {
+  // Network namespace to setup interface in
   string net_ns = 1;
+  // Interface name to update
   string intf_name = 2;
+  // IP to update
   string intf_ip = 3;
+  // VTEP of VXLAN peer
   string peer_vtep = 4;
   string kube_ns = 5;
   int64 vni = 6;
   LinkProperties properties = 7;
+  // Pod name
+  string name = 8;
 }
 
 // The proto describes both end of a grpc-wire, the local end and the remote

@@ -79,6 +79,7 @@ func UpdateRemote(ctx context.Context, localPod *pb.Pod, peerPod *pb.Pod, link *
 		Vni:        link.Uid + VxlanBase,
 		KubeNs:     localPod.KubeNs,
 		Properties: link.Properties,
+		Name:       link.PeerPod,
 	}
 
 	url := fmt.Sprintf("%s:%s", peerPod.SrcIp, DefaultPort)
