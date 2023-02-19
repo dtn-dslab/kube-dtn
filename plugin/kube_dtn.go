@@ -166,21 +166,21 @@ func main() {
 	}
 
 	SetInterNodeLinkType()
-	log.Infof("INTER_NODE_LINK_TYPE: %v", interNodeLinkType)
+	_ = interNodeLinkType
+	// log.Infof("INTER_NODE_LINK_TYPE: %v", interNodeLinkType)
 
 	retCode := 0
-	e := skel.PluginMainWithError(cmdAdd, cmdGet, cmdDel, version.All, "CNI plugin kubedtn v0.3.0")
+	e := skel.PluginMainWithError(cmdAdd, cmdCheck, cmdDel, version.All, "CNI plugin kubedtn v0.3.0")
 	if e != nil {
 		log.Errorf("failed to run kubedtn cni: %v", e.Print())
 		retCode = 1
 	}
-	log.Infof("kubedtn cni call successful")
 	fp.Close()
 	os.Exit(retCode)
 }
 
-func cmdGet(args *skel.CmdArgs) error {
-	log.Infof("cmdGet called: %+v", args)
+func cmdCheck(args *skel.CmdArgs) error {
+	log.Infof("cmdCheck called: %+v", args)
 	return fmt.Errorf("not implemented")
 }
 
