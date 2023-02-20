@@ -7,6 +7,7 @@ import (
 const (
 	VxlanBase             = 5000
 	DefaultPort           = "51111"
+	HttpAddr              = ":51112"
 	Localhost             = "localhost"
 	LocalDaemon           = Localhost + ":" + DefaultPort
 	MacvlanMode           = netlink.MACVLAN_MODE_BRIDGE

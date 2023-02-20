@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"net/http"
 	"os"
 	"strconv"
 
@@ -11,6 +12,8 @@ import (
 	"github.com/y-young/kube-dtn/daemon/grpcwire"
 	"github.com/y-young/kube-dtn/daemon/kubedtn"
 	"github.com/y-young/kube-dtn/daemon/vxlan"
+
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func main() {
@@ -29,6 +32,11 @@ func main() {
 		}
 	}
 
+	httpAddr := os.Getenv("HTTP_ADDR")
+	if err != nil || httpAddr == "" {
+		httpAddr = common.HttpAddr
+	}
+
 	flag.Parse()
 	log.SetLevel(log.InfoLevel)
 	if *isDebug {
@@ -39,6 +47,12 @@ func main() {
 	kubedtn.InitLogger()
 	grpcwire.InitLogger()
 	vxlan.InitLogger()
+
+	go func() {
+		log.Infof("HTTP server listening on port %s", httpAddr)
+		http.Handle("/metrics", promhttp.Handler())
+		http.ListenAndServe(httpAddr, nil)
+	}()
 
 	m, err := kubedtn.New(kubedtn.Config{
 		Port: grpcPort,
