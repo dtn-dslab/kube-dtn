@@ -15,6 +15,7 @@ import (
 	"github.com/openconfig/gnmi/errlist"
 	koko "github.com/redhat-nfvpe/koko/api"
 	log "github.com/sirupsen/logrus"
+	"github.com/y-young/kube-dtn/common"
 	pb "github.com/y-young/kube-dtn/proto/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -384,10 +385,9 @@ func CreateGRPCWireRemoteTriggered(wireDef *pb.WireDef, stopC chan struct{}) (*G
 // -----------------------------------------------------------------------------------------------------------
 func RecvFrmLocalPodThread(wire *GRPCWire) error {
 
-	defaultPort := "51111"             //+++todo: use proper constant as defined in some other file
 	pktBuffSz := int32(1024 * 64 * 10) //keep buffer for MAX 10 64K frames
 
-	url := strings.TrimSpace(fmt.Sprintf("%s:%s", wire.PeerNodeIP, defaultPort))
+	url := strings.TrimSpace(fmt.Sprintf("%s:%s", wire.PeerNodeIP, common.DefaultPort))
 	/* Utilizing google gopacket for polling for packets from the node. This seems to be the
 	   simplest way to get all packets.
 	   As an alternative to google gopacket(pcap), a socket based implementation is possible.

@@ -28,15 +28,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	v1 "github.com/y-young/kube-dtn/api/v1"
+	"github.com/y-young/kube-dtn/common"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
 	pb "github.com/y-young/kube-dtn/proto/v1"
-)
-
-const (
-	defaultPort = "51111"
 )
 
 // TopologyReconciler reconciles a Topology object
@@ -122,7 +119,7 @@ func (r *TopologyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 func (r *TopologyReconciler) AddLinks(ctx context.Context, topology *v1.Topology, links []v1.Link) error {
 	log := log.FromContext(ctx)
 
-	daemonAddr := topology.Status.SrcIP + ":" + defaultPort
+	daemonAddr := topology.Status.SrcIP + ":" + common.DefaultPort
 	conn, err := grpc.Dial(daemonAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Error(err, "Failed to connect to daemon", "daemonAddr", daemonAddr)
@@ -161,7 +158,7 @@ func (r *TopologyReconciler) AddLinks(ctx context.Context, topology *v1.Topology
 func (r *TopologyReconciler) DelLinks(ctx context.Context, topology *v1.Topology, links []v1.Link) error {
 	log := log.FromContext(ctx)
 
-	daemonAddr := topology.Status.SrcIP + ":" + defaultPort
+	daemonAddr := topology.Status.SrcIP + ":" + common.DefaultPort
 	conn, err := grpc.Dial(daemonAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Error(err, "Failed to connect to daemon", "daemonAddr", daemonAddr)

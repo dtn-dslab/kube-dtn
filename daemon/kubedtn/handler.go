@@ -412,7 +412,7 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 	}
 
 	// First option is macvlan interface
-	if link.PeerPod == "localhost" {
+	if link.PeerPod == common.Localhost {
 		logger.Infof("Peer link is MacVlan")
 		macVlan := koko.MacVLan{
 			ParentIF: link.PeerIntf,
