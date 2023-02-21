@@ -11,6 +11,7 @@ import (
 	"github.com/y-young/kube-dtn/daemon/cni"
 	"github.com/y-young/kube-dtn/daemon/grpcwire"
 	"github.com/y-young/kube-dtn/daemon/kubedtn"
+	"github.com/y-young/kube-dtn/daemon/metrics"
 	"github.com/y-young/kube-dtn/daemon/vxlan"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -48,15 +49,18 @@ func main() {
 	grpcwire.InitLogger()
 	vxlan.InitLogger()
 
+	topologyManager := metrics.NewTopologyManager()
+	reg := metrics.NewRegistry(topologyManager)
+
 	go func() {
 		log.Infof("HTTP server listening on port %s", httpAddr)
-		http.Handle("/metrics", promhttp.Handler())
+		http.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
 		http.ListenAndServe(httpAddr, nil)
 	}()
 
 	m, err := kubedtn.New(kubedtn.Config{
 		Port: grpcPort,
-	})
+	}, topologyManager)
 	if err != nil {
 		log.Errorf("Failed to create kubedtn: %v", err)
 		os.Exit(1)

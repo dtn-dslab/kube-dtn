@@ -18,6 +18,7 @@ import (
 	"k8s.io/client-go/util/homedir"
 
 	topologyclientv1 "github.com/y-young/kube-dtn/api/clientset/v1beta1"
+	"github.com/y-young/kube-dtn/daemon/metrics"
 
 	pb "github.com/y-young/kube-dtn/proto/v1"
 )
@@ -31,12 +32,13 @@ type KubeDTN struct {
 	pb.UnimplementedLocalServer
 	pb.UnimplementedRemoteServer
 	pb.UnimplementedWireProtocolServer
-	config  Config
-	kClient kubernetes.Interface
-	tClient topologyclientv1.Interface
-	rCfg    *rest.Config
-	s       *grpc.Server
-	lis     net.Listener
+	config          Config
+	kClient         kubernetes.Interface
+	tClient         topologyclientv1.Interface
+	rCfg            *rest.Config
+	s               *grpc.Server
+	lis             net.Listener
+	topologyManager *metrics.TopologyManager
 }
 
 var logger *log.Entry = nil
@@ -62,7 +64,7 @@ func restConfig() (*rest.Config, error) {
 	return rCfg, nil
 }
 
-func New(cfg Config) (*KubeDTN, error) {
+func New(cfg Config, topologyManager *metrics.TopologyManager) (*KubeDTN, error) {
 	rCfg, err := restConfig()
 	if err != nil {
 		return nil, err
@@ -79,13 +81,20 @@ func New(cfg Config) (*KubeDTN, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	err = topologyManager.Init(tClient.Topology(""))
+	if err != nil {
+		return nil, err
+	}
+
 	m := &KubeDTN{
-		config:  cfg,
-		rCfg:    rCfg,
-		kClient: kClient,
-		tClient: tClient,
-		lis:     lis,
-		s:       newServerWithLogging(cfg.GRPCOpts...),
+		config:          cfg,
+		rCfg:            rCfg,
+		kClient:         kClient,
+		tClient:         tClient,
+		lis:             lis,
+		s:               newServerWithLogging(cfg.GRPCOpts...),
+		topologyManager: topologyManager,
 	}
 	pb.RegisterLocalServer(m.s, m)
 	pb.RegisterRemoteServer(m.s, m)

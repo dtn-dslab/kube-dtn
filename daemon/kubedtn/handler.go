@@ -97,6 +97,7 @@ func (m *KubeDTN) SetAlive(ctx context.Context, pod *pb.Pod) (*pb.BoolResponse, 
 
 		topology.Status.SrcIP = pod.SrcIp
 		topology.Status.NetNs = pod.NetNs
+		m.topologyManager.Add(topology)
 
 		return m.updateStatus(ctx, topology, pod.KubeNs)
 	})
@@ -744,6 +745,7 @@ func (m *KubeDTN) DestroyPod(ctx context.Context, pod *pb.PodQuery) (*pb.BoolRes
 		}
 	}
 
+	m.topologyManager.Delete(pod.Name)
 	return &pb.BoolResponse{Response: true}, nil
 }
 
