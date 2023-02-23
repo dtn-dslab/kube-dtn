@@ -62,6 +62,7 @@ type Link struct {
 
 	// Local IP address
 	// +optional
+	// +kubebuilder:validation:Pattern=`^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(3[0-2]|[1-2][0-9]|[0-9]))?$`
 	LocalIP string `json:"local_ip"`
 
 	// Peer interface name
@@ -69,6 +70,7 @@ type Link struct {
 
 	// Peer IP address
 	// +optional
+	// +kubebuilder:validation:Pattern=`^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(3[0-2]|[1-2][0-9]|[0-9]))?$`
 	PeerIP string `json:"peer_ip"`
 
 	// Name of the peer pod
@@ -82,78 +84,88 @@ type Link struct {
 	Properties LinkProperties `json:"properties,omitempty"`
 }
 
+// Float percentage between 0 and 100
+// +kubebuilder:validation:Pattern=`^(100(\.0+)?|\d{1,2}(\.\d+)?)$`
+type Percentage string
+
+// Duration string, e.g. "300ms", "1.5s".
+// +kubebuilder:validation:Pattern=`^(\d+(\.\d+)?(ns|us|µs|μs|ms|s|m|h))+$`
+type Duration string
+
 type LinkProperties struct {
 	// Latency in duration string format, e.g. "300ms", "1.5s".
 	// Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h".
 	// +optional
-	Latency string `json:"latency,omitempty"`
+	Latency Duration `json:"latency,omitempty"`
 
 	// Latency correlation in float percentage
 	// +optional
-	LatencyCorr string `json:"latency_corr,omitempty"`
+	LatencyCorr Percentage `json:"latency_corr,omitempty"`
 
 	// Jitter in duration string format, e.g. "300ms", "1.5s".
 	// Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h".
 	// +optional
-	Jitter string `json:"jitter,omitempty"`
+	Jitter Duration `json:"jitter,omitempty"`
 
 	// Loss rate in float percentage
 	// +optional
-	Loss string `json:"loss,omitempty"`
+	Loss Percentage `json:"loss,omitempty"`
 
 	// Loss correlation in float percentage
 	// +optional
-	LossCorr string `json:"loss_corr,omitempty"`
+	LossCorr Percentage `json:"loss_corr,omitempty"`
 
 	// Bandwidth rate limit, e.g. 1000(bit/s), 100kbit, 100Mbps, 1Gibps.
 	// For more information, refer to https://man7.org/linux/man-pages/man8/tc.8.html.
 	// +optional
+	// +kubebuilder:validation:Pattern=`^\d+(\.\d+)?([KkMmGg]i?)?(bit|bps)?$`
 	Rate string `json:"rate,omitempty"`
 
 	// Gap every N packets
 	// +optional
+	// +kubebuilder:validation:Minimum=0
 	Gap uint32 `json:"gap,omitempty"`
 
 	// Duplicate rate in float percentage
 	// +optional
-	Duplicate string `json:"duplicate,omitempty"`
+	Duplicate Percentage `json:"duplicate,omitempty"`
 
 	// Duplicate correlation in float percentage
 	// +optional
-	DuplicateCorr string `json:"duplicate_corr,omitempty"`
+	DuplicateCorr Percentage `json:"duplicate_corr,omitempty"`
 
 	// Reorder probability in float percentage
 	// +optional
-	ReorderProb string `json:"reorder_prob,omitempty"`
+	ReorderProb Percentage `json:"reorder_prob,omitempty"`
 
 	// Reorder correlation in float percentage
 	// +optional
-	ReorderCorr string `json:"reorder_corr,omitempty"`
+	ReorderCorr Percentage `json:"reorder_corr,omitempty"`
 
 	// Corrupt probability in float percentage
 	// +optional
-	CorruptProb string `json:"corrupt_prob,omitempty"`
+	CorruptProb Percentage `json:"corrupt_prob,omitempty"`
 
 	// Corrupt correlation in float percentage
 	// +optional
-	CorruptCorr string `json:"corrupt_corr,omitempty"`
+	CorruptCorr Percentage `json:"corrupt_corr,omitempty"`
 }
 
 func (p *LinkProperties) ToProto() *pb.LinkProperties {
 	return &pb.LinkProperties{
-		Latency:       p.Latency,
-		LatencyCorr:   p.LatencyCorr,
-		Jitter:        p.Jitter,
-		Loss:          p.Loss,
-		LossCorr:      p.LossCorr,
+		Latency:       string(p.Latency),
+		LatencyCorr:   string(p.LatencyCorr),
+		Jitter:        string(p.Jitter),
+		Loss:          string(p.Loss),
+		LossCorr:      string(p.LossCorr),
 		Rate:          p.Rate,
 		Gap:           p.Gap,
-		Duplicate:     p.Duplicate,
-		DuplicateCorr: p.DuplicateCorr,
-		ReorderProb:   p.ReorderProb,
-		ReorderCorr:   p.ReorderCorr,
-		CorruptProb:   p.CorruptProb,
-		CorruptCorr:   p.CorruptCorr,
+		Duplicate:     string(p.Duplicate),
+		DuplicateCorr: string(p.DuplicateCorr),
+		ReorderProb:   string(p.ReorderProb),
+		ReorderCorr:   string(p.ReorderCorr),
+		CorruptProb:   string(p.CorruptProb),
+		CorruptCorr:   string(p.CorruptCorr),
 	}
 }
 
