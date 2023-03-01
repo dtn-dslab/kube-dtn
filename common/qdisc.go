@@ -209,6 +209,11 @@ func SetVethQdiscs(veth *koko.VEth, qdiscs []netlink.Qdisc) (err error) {
 	}
 	defer vethNs.Close()
 
+	err = ClearVethQdiscs(veth)
+	if err != nil {
+		log.Errorf("Failed to clear qdiscs on veth %s: %v", veth.LinkName, err)
+	}
+
 	return vethNs.Do(func(_ ns.NetNS) (err error) {
 		var link netlink.Link
 		if link, err = netlink.LinkByName(veth.LinkName); err != nil {
@@ -259,6 +264,42 @@ func SetVethQdiscs(veth *koko.VEth, qdiscs []netlink.Qdisc) (err error) {
 			if err != nil {
 				log.Errorf("Failed to add qdisc %v to link %s: %v", qdisc, veth.LinkName, err)
 				return err
+			}
+		}
+		return nil
+	})
+}
+
+func ClearVethQdiscs(veth *koko.VEth) (err error) {
+	var vethNs ns.NetNS
+	if veth.NsName == "" {
+		if vethNs, err = ns.GetCurrentNS(); err != nil {
+			log.Errorf("Failed to get current namespace: %v", err)
+			return err
+		}
+	} else {
+		if vethNs, err = ns.GetNS(veth.NsName); err != nil {
+			log.Errorf("Failed to get namespace %s: %v", veth.NsName, err)
+			return err
+		}
+	}
+	defer vethNs.Close()
+
+	return vethNs.Do(func(_ ns.NetNS) (err error) {
+		var link netlink.Link
+		if link, err = netlink.LinkByName(veth.LinkName); err != nil {
+			log.Errorf("Cannot get link %s in namespace %s: %v", veth.LinkName, veth.NsName, err)
+			return err
+		}
+		qdiscs, err := netlink.QdiscList(link)
+		if err != nil {
+			log.Errorf("Failed to list qdiscs for link %s: %v", veth.LinkName, err)
+			return err
+		}
+		for _, qdisc := range qdiscs {
+			err = netlink.QdiscDel(qdisc)
+			if err != nil {
+				log.Errorf("Failed to delete qdisc %v from link %s: %v", qdisc, veth.LinkName, err)
 			}
 		}
 		return nil
