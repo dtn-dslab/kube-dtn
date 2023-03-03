@@ -61,7 +61,7 @@ func CreateOrUpdate(v *pb.RemotePod) (*api.VEth, error) {
 
 	// Check if interface already exists
 	vxlanLink, ok := link.(*netlink.Vxlan)
-	vxlanLogger.Infof("Is link %+v a VXLAN?: %s", vxlanLink, strconv.FormatBool(ok))
+	vxlanLogger.Infof("Is link %s a VXLAN?: %s", veth.LinkName, strconv.FormatBool(ok))
 	if ok { // the link we've found is a vxlan link
 
 		if !(vxlanLink.VxlanId == vxlan.ID && vxlanLink.Group.Equal(vxlan.IPAddr)) { // If Vxlan attrs are different

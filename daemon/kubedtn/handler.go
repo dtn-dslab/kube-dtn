@@ -686,6 +686,7 @@ func (m *KubeDTN) SetupPod(ctx context.Context, pod *pb.SetupPodQuery) (*pb.Bool
 		}
 	}
 
+	logger.Infof("Successfully set up pod")
 	return &pb.BoolResponse{Response: true}, nil
 }
 
@@ -738,6 +739,7 @@ func (m *KubeDTN) DestroyPod(ctx context.Context, pod *pb.PodQuery) (*pb.BoolRes
 	}
 
 	m.topologyManager.Delete(pod.Name)
+	logger.Infof("Successfully destroyed pod")
 	return &pb.BoolResponse{Response: true}, nil
 }
 
