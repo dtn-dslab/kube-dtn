@@ -65,6 +65,11 @@ type Link struct {
 	// +kubebuilder:validation:Pattern=`^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(3[0-2]|[1-2][0-9]|[0-9]))?$`
 	LocalIP string `json:"local_ip"`
 
+	// Local MAC address, e.g. 00:00:5e:00:53:01 or 00-00-5e-00-53-01
+	// +optional
+	// +kubebuilder:validation:Pattern=`^([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$`
+	LocalMAC string `json:"local_mac"`
+
 	// Peer interface name
 	PeerIntf string `json:"peer_intf"`
 
@@ -72,6 +77,11 @@ type Link struct {
 	// +optional
 	// +kubebuilder:validation:Pattern=`^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(3[0-2]|[1-2][0-9]|[0-9]))?$`
 	PeerIP string `json:"peer_ip"`
+
+	// Peer MAC address, e.g. 00:00:5e:00:53:01 or 00-00-5e-00-53-01
+	// +optional
+	// +kubebuilder:validation:Pattern=`^([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$`
+	PeerMAC string `json:"peer_mac"`
 
 	// Name of the peer pod
 	PeerPod string `json:"peer_pod"`
@@ -82,6 +92,20 @@ type Link struct {
 	// Link properties, latency, bandwidth, etc
 	// +optional
 	Properties LinkProperties `json:"properties,omitempty"`
+}
+
+func (l *Link) ToProto() *pb.Link {
+	return &pb.Link{
+		PeerPod:    l.PeerPod,
+		LocalIntf:  l.LocalIntf,
+		PeerIntf:   l.PeerIntf,
+		LocalIp:    l.LocalIP,
+		PeerIp:     l.PeerIP,
+		LocalMac:   l.LocalMAC,
+		PeerMac:    l.PeerMAC,
+		Uid:        int64(l.UID),
+		Properties: l.Properties.ToProto(),
+	}
 }
 
 // Float percentage between 0 and 100

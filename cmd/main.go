@@ -85,7 +85,7 @@ func getVxlanSource() (intf string, ip string) {
 func addLink(link *pb.Link, srcIntf string, peerIP string) error {
 	// Build koko's veth struct for local intf
 	// We're connecting physical host interface, so use root network namespace
-	myVeth, err := common.MakeVeth("", link.LocalIntf, link.LocalIp)
+	myVeth, err := common.MakeVeth("", link.LocalIntf, link.LocalIp, "")
 	if err != nil {
 		return err
 	}

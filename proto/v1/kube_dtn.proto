@@ -24,6 +24,8 @@ message Link {
   string peer_ip = 5;
   int64 uid = 6;
   LinkProperties properties = 7;
+  string local_mac = 8;
+  string peer_mac = 9;
 }
 
 message LinkProperties {

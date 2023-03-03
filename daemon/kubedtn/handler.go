@@ -54,15 +54,7 @@ func (m *KubeDTN) Get(ctx context.Context, pod *pb.PodQuery) (*pb.Pod, error) {
 	links := make([]*pb.Link, len(remoteLinks))
 	for i := range links {
 		remoteLink := remoteLinks[i]
-		newLink := &pb.Link{
-			PeerPod:    remoteLink.PeerPod,
-			PeerIntf:   remoteLink.PeerIntf,
-			LocalIntf:  remoteLink.LocalIntf,
-			LocalIp:    remoteLink.LocalIP,
-			PeerIp:     remoteLink.PeerIP,
-			Uid:        int64(remoteLink.UID),
-			Properties: remoteLink.Properties.ToProto(),
-		}
+		newLink := remoteLink.ToProto()
 		links[i] = newLink
 	}
 
@@ -407,7 +399,7 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 	logger.Infof("VxLan route is via %s@%s", srcIP, srcIntf)
 
 	// Build koko's veth struct for local intf
-	myVeth, err := common.MakeVeth(localPod.NetNs, link.LocalIntf, link.LocalIp)
+	myVeth, err := common.MakeVeth(localPod.NetNs, link.LocalIntf, link.LocalIp, link.LocalMac)
 	if err != nil {
 		return err
 	}
@@ -471,7 +463,7 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 		if peerPod.SrcIp == localPod.SrcIp { // This means we're on the same host
 			logger.Infof("%s and %s are on the same host", localPod.Name, peerPod.Name)
 			// Creating koko's Veth struct for peer intf
-			peerVeth, err := common.MakeVeth(peerPod.NetNs, link.PeerIntf, link.PeerIp)
+			peerVeth, err := common.MakeVeth(peerPod.NetNs, link.PeerIntf, link.PeerIp, link.PeerMac)
 			if err != nil {
 				logger.Infof("Failed to build koko Veth struct")
 				return err
@@ -619,7 +611,7 @@ func (m *KubeDTN) delLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 	})
 
 	// Creating koko's Veth struct for local intf
-	myVeth, err := common.MakeVeth(localPod.NetNs, link.LocalIntf, link.LocalIp)
+	myVeth, err := common.MakeVeth(localPod.NetNs, link.LocalIntf, link.LocalIp, link.LocalMac)
 	if err != nil {
 		logger.Infof("Failed to construct koko Veth struct")
 		return err

@@ -42,11 +42,12 @@ func GetVxlanSource(nodeIP string) (string, string, error) {
 }
 
 // Creates koko.Veth from NetNS and LinkName
-func MakeVeth(netNS, linkName string, ip string) (*koko.VEth, error) {
-	log.Infof("Creating Veth struct with NetNS: %s and intfName: %s, IP: %s", netNS, linkName, ip)
+func MakeVeth(netNS, linkName string, ip string, mac string) (*koko.VEth, error) {
+	log.Infof("Creating Veth struct with NetNS: %s and intfName: %s, IP: %s, MAC: %s", netNS, linkName, ip, mac)
 	veth := koko.VEth{}
 	veth.NsName = netNS
 	veth.LinkName = linkName
+
 	if ip != "" {
 		ipAddr, ipSubnet, err := net.ParseCIDR(ip)
 		if err != nil {
@@ -57,6 +58,15 @@ func MakeVeth(netNS, linkName string, ip string) (*koko.VEth, error) {
 			Mask: ipSubnet.Mask,
 		}}
 	}
+
+	if mac != "" {
+		macAddr, err := net.ParseMAC(mac)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse MAC %s: %s", mac, err)
+		}
+		veth.HardwareAddr = macAddr
+	}
+
 	return &veth, nil
 }
 

@@ -127,7 +127,7 @@ func CreateGRPCChan(link *pb.Link, localPod *pb.Pod, peerPod *pb.Pod, server pb.
 
 	// Build koko's veth struct for the intf to be placed inside the pod
 	inConIntfNm := link.LocalIntf
-	inContainerVeth, err := MakeVeth(localPod.NetNs, inConIntfNm, link.LocalIp)
+	inContainerVeth, err := MakeVeth(localPod.NetNs, inConIntfNm, link.LocalIp, "")
 	if err != nil {
 		log.Errorf("Could not create vEth for local pod %s:%s, peer pod %s, err %v", localPod.Name, inConIntfNm, peerPod.Name, err)
 		return err
