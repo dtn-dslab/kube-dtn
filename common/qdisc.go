@@ -13,11 +13,12 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/vishvananda/netlink"
 	pb "github.com/y-young/kube-dtn/proto/v1"
+	"google.golang.org/protobuf/proto"
 )
 
 func MakeQdiscs(properties *pb.LinkProperties) ([]netlink.Qdisc, error) {
 	qdiscs := []netlink.Qdisc{}
-	if properties == nil {
+	if properties == nil || proto.Size(properties) == 0 {
 		return qdiscs, nil
 	}
 
@@ -195,6 +196,15 @@ func ParseRate(rate string) (uint64, error) {
 }
 
 func SetVethQdiscs(veth *koko.VEth, qdiscs []netlink.Qdisc) (err error) {
+	err = ClearVethQdiscs(veth)
+	if err != nil {
+		log.Errorf("Failed to clear qdiscs on veth %s: %v", veth.LinkName, err)
+	}
+
+	if len(qdiscs) == 0 {
+		return nil
+	}
+
 	var vethNs ns.NetNS
 	if veth.NsName == "" {
 		if vethNs, err = ns.GetCurrentNS(); err != nil {
@@ -208,11 +218,6 @@ func SetVethQdiscs(veth *koko.VEth, qdiscs []netlink.Qdisc) (err error) {
 		}
 	}
 	defer vethNs.Close()
-
-	err = ClearVethQdiscs(veth)
-	if err != nil {
-		log.Errorf("Failed to clear qdiscs on veth %s: %v", veth.LinkName, err)
-	}
 
 	return vethNs.Do(func(_ ns.NetNS) (err error) {
 		var link netlink.Link
@@ -297,9 +302,12 @@ func ClearVethQdiscs(veth *koko.VEth) (err error) {
 			return err
 		}
 		for _, qdisc := range qdiscs {
-			err = netlink.QdiscDel(qdisc)
-			if err != nil {
-				log.Errorf("Failed to delete qdisc %v from link %s: %v", qdisc, veth.LinkName, err)
+			switch qdisc := qdisc.(type) {
+			case *netlink.Netem, *netlink.Tbf:
+				err = netlink.QdiscDel(qdisc)
+				if err != nil {
+					log.Errorf("Failed to delete qdisc %v from link %s: %v", qdisc, veth.LinkName, err)
+				}
 			}
 		}
 		return nil
