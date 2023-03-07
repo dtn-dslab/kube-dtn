@@ -62,12 +62,12 @@ type Link struct {
 
 	// Local IP address
 	// +optional
-	// +kubebuilder:validation:Pattern=`^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(3[0-2]|[1-2][0-9]|[0-9]))?$`
+	// +kubebuilder:validation:Pattern=`^((([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(3[0-2]|[1-2][0-9]|[0-9]))?)?$`
 	LocalIP string `json:"local_ip"`
 
 	// Local MAC address, e.g. 00:00:5e:00:53:01 or 00-00-5e-00-53-01
 	// +optional
-	// +kubebuilder:validation:Pattern=`^([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$`
+	// +kubebuilder:validation:Pattern=`^(([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2})?$`
 	LocalMAC string `json:"local_mac"`
 
 	// Peer interface name
@@ -75,12 +75,12 @@ type Link struct {
 
 	// Peer IP address
 	// +optional
-	// +kubebuilder:validation:Pattern=`^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(3[0-2]|[1-2][0-9]|[0-9]))?$`
+	// +kubebuilder:validation:Pattern=`^((([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(3[0-2]|[1-2][0-9]|[0-9]))?)?$`
 	PeerIP string `json:"peer_ip"`
 
 	// Peer MAC address, e.g. 00:00:5e:00:53:01 or 00-00-5e-00-53-01
 	// +optional
-	// +kubebuilder:validation:Pattern=`^([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$`
+	// +kubebuilder:validation:Pattern=`^(([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2})?$`
 	PeerMAC string `json:"peer_mac"`
 
 	// Name of the peer pod
