@@ -78,8 +78,8 @@ func (r *TopologyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		// Saw topology for the first time, assume all links in spec have been set up,
 		// we'll copy initial links to status later
 	} else {
-		add, del := r.CalcDiff(topology.Status.Links, topology.Spec.Links)
-		log.Info("Topology changed", "add", add, "del", del)
+		add, del, propertiesChanged := r.CalcDiff(topology.Status.Links, topology.Spec.Links)
+		log.Info("Topology changed", "add", add, "del", del, "update", propertiesChanged)
 
 		if err := r.DelLinks(ctx, &topology, del); err != nil {
 			log.Error(err, "Failed to delete links")
@@ -88,6 +88,11 @@ func (r *TopologyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 		if err := r.AddLinks(ctx, &topology, add); err != nil {
 			log.Error(err, "Failed to add links")
+			return ctrl.Result{}, err
+		}
+
+		if err := r.UpdateLinks(ctx, &topology, propertiesChanged); err != nil {
+			log.Error(err, "Failed to update links")
 			return ctrl.Result{}, err
 		}
 	}
@@ -117,6 +122,10 @@ func (r *TopologyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 }
 
 func (r *TopologyReconciler) AddLinks(ctx context.Context, topology *v1.Topology, links []v1.Link) error {
+	if len(links) == 0 {
+		return nil
+	}
+
 	log := log.FromContext(ctx)
 
 	daemonAddr := topology.Status.SrcIP + ":" + common.DefaultPort
@@ -137,14 +146,7 @@ func (r *TopologyReconciler) AddLinks(ctx context.Context, topology *v1.Topology
 				NetNs:  topology.Status.NetNs,
 				KubeNs: topology.Namespace,
 			},
-			Link: &pb.Link{
-				PeerPod:   link.PeerPod,
-				LocalIntf: link.LocalIntf,
-				PeerIntf:  link.PeerIntf,
-				LocalIp:   link.LocalIP,
-				PeerIp:    link.PeerIP,
-				Uid:       int64(link.UID),
-			},
+			Link: link.ToProto(),
 		})
 		if err != nil || !result.GetResponse() {
 			log.Error(err, "Failed to add link")
@@ -156,6 +158,10 @@ func (r *TopologyReconciler) AddLinks(ctx context.Context, topology *v1.Topology
 }
 
 func (r *TopologyReconciler) DelLinks(ctx context.Context, topology *v1.Topology, links []v1.Link) error {
+	if len(links) == 0 {
+		return nil
+	}
+
 	log := log.FromContext(ctx)
 
 	daemonAddr := topology.Status.SrcIP + ":" + common.DefaultPort
@@ -176,14 +182,7 @@ func (r *TopologyReconciler) DelLinks(ctx context.Context, topology *v1.Topology
 				NetNs:  topology.Status.NetNs,
 				KubeNs: topology.Namespace,
 			},
-			Link: &pb.Link{
-				PeerPod:   link.PeerPod,
-				LocalIntf: link.LocalIntf,
-				PeerIntf:  link.PeerIntf,
-				LocalIp:   link.LocalIP,
-				PeerIp:    link.PeerIP,
-				Uid:       int64(link.UID),
-			},
+			Link: link.ToProto(),
 		})
 		if err != nil || !result.GetResponse() {
 			log.Error(err, "Failed to delete link")
@@ -194,13 +193,49 @@ func (r *TopologyReconciler) DelLinks(ctx context.Context, topology *v1.Topology
 	return err
 }
 
+func (r *TopologyReconciler) UpdateLinks(ctx context.Context, topology *v1.Topology, links []v1.Link) error {
+	if len(links) == 0 {
+		return nil
+	}
+
+	log := log.FromContext(ctx)
+
+	daemonAddr := topology.Status.SrcIP + ":" + common.DefaultPort
+	conn, err := grpc.Dial(daemonAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		log.Error(err, "Failed to connect to daemon", "daemonAddr", daemonAddr)
+		return err
+	}
+	defer conn.Close()
+	kubedtnClient := pb.NewLocalClient(conn)
+
+	result, err := kubedtnClient.UpdateLinks(ctx, &pb.LinksBatchQuery{
+		LocalPod: &pb.Pod{
+			Name:   topology.Name,
+			SrcIp:  topology.Status.SrcIP,
+			NetNs:  topology.Status.NetNs,
+			KubeNs: topology.Namespace,
+		},
+		Links: common.Map(links, func(link v1.Link) *pb.Link { return link.ToProto() }),
+	})
+	if err != nil || !result.GetResponse() {
+		log.Error(err, "Failed to delete link")
+		return err
+	}
+	log.Info("Successfully updated links")
+	return err
+}
+
 // Calculate difference between two old links and new links, returns a list of links to be added and a list of links to be deleted
-func (r *TopologyReconciler) CalcDiff(old []v1.Link, new []v1.Link) (add []v1.Link, del []v1.Link) {
+func (r *TopologyReconciler) CalcDiff(old []v1.Link, new []v1.Link) (add []v1.Link, del []v1.Link, propertiesChanged []v1.Link) {
 	for _, oldLink := range old {
 		found := false
 		for _, newLink := range new {
-			if reflect.DeepEqual(oldLink, newLink) {
+			if EqualWithoutProperties(oldLink, newLink) {
 				found = true
+				if !reflect.DeepEqual(oldLink.Properties, newLink.Properties) {
+					propertiesChanged = append(propertiesChanged, newLink)
+				}
 				break
 			}
 		}
@@ -212,7 +247,7 @@ func (r *TopologyReconciler) CalcDiff(old []v1.Link, new []v1.Link) (add []v1.Li
 	for _, newLink := range new {
 		found := false
 		for _, oldLink := range old {
-			if reflect.DeepEqual(oldLink, newLink) {
+			if EqualWithoutProperties(oldLink, newLink) {
 				found = true
 				break
 			}
@@ -229,4 +264,16 @@ func (r *TopologyReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1.Topology{}).
 		Complete(r)
+}
+
+// EqualWithoutProperties compares two links without comparing link properties
+func EqualWithoutProperties(a, b v1.Link) bool {
+	return a.LocalIntf == b.LocalIntf &&
+		a.LocalIP == b.LocalIP &&
+		a.LocalMAC == b.LocalMAC &&
+		a.PeerIntf == b.PeerIntf &&
+		a.PeerIP == b.PeerIP &&
+		a.PeerMAC == b.PeerMAC &&
+		a.PeerPod == b.PeerPod &&
+		a.UID == b.UID
 }

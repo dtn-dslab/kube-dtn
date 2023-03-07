@@ -29,6 +29,7 @@ type LocalClient interface {
 	IsSkipped(ctx context.Context, in *SkipQuery, opts ...grpc.CallOption) (*BoolResponse, error)
 	AddLink(ctx context.Context, in *AddLinkQuery, opts ...grpc.CallOption) (*BoolResponse, error)
 	DelLink(ctx context.Context, in *DelLinkQuery, opts ...grpc.CallOption) (*BoolResponse, error)
+	UpdateLinks(ctx context.Context, in *LinksBatchQuery, opts ...grpc.CallOption) (*BoolResponse, error)
 	SetupPod(ctx context.Context, in *SetupPodQuery, opts ...grpc.CallOption) (*BoolResponse, error)
 	DestroyPod(ctx context.Context, in *PodQuery, opts ...grpc.CallOption) (*BoolResponse, error)
 	GRPCWireExists(ctx context.Context, in *WireDef, opts ...grpc.CallOption) (*WireCreateResponse, error)
@@ -111,6 +112,15 @@ func (c *localClient) DelLink(ctx context.Context, in *DelLinkQuery, opts ...grp
 	return out, nil
 }
 
+func (c *localClient) UpdateLinks(ctx context.Context, in *LinksBatchQuery, opts ...grpc.CallOption) (*BoolResponse, error) {
+	out := new(BoolResponse)
+	err := c.cc.Invoke(ctx, "/proto.v1.Local/UpdateLinks", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *localClient) SetupPod(ctx context.Context, in *SetupPodQuery, opts ...grpc.CallOption) (*BoolResponse, error) {
 	out := new(BoolResponse)
 	err := c.cc.Invoke(ctx, "/proto.v1.Local/SetupPod", in, out, opts...)
@@ -176,6 +186,7 @@ type LocalServer interface {
 	IsSkipped(context.Context, *SkipQuery) (*BoolResponse, error)
 	AddLink(context.Context, *AddLinkQuery) (*BoolResponse, error)
 	DelLink(context.Context, *DelLinkQuery) (*BoolResponse, error)
+	UpdateLinks(context.Context, *LinksBatchQuery) (*BoolResponse, error)
 	SetupPod(context.Context, *SetupPodQuery) (*BoolResponse, error)
 	DestroyPod(context.Context, *PodQuery) (*BoolResponse, error)
 	GRPCWireExists(context.Context, *WireDef) (*WireCreateResponse, error)
@@ -212,6 +223,9 @@ func (UnimplementedLocalServer) AddLink(context.Context, *AddLinkQuery) (*BoolRe
 }
 func (UnimplementedLocalServer) DelLink(context.Context, *DelLinkQuery) (*BoolResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DelLink not implemented")
+}
+func (UnimplementedLocalServer) UpdateLinks(context.Context, *LinksBatchQuery) (*BoolResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateLinks not implemented")
 }
 func (UnimplementedLocalServer) SetupPod(context.Context, *SetupPodQuery) (*BoolResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SetupPod not implemented")
@@ -370,6 +384,24 @@ func _Local_DelLink_Handler(srv interface{}, ctx context.Context, dec func(inter
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Local_UpdateLinks_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LinksBatchQuery)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(LocalServer).UpdateLinks(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/proto.v1.Local/UpdateLinks",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(LocalServer).UpdateLinks(ctx, req.(*LinksBatchQuery))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Local_SetupPod_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(SetupPodQuery)
 	if err := dec(in); err != nil {
@@ -512,6 +544,10 @@ var Local_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DelLink",
 			Handler:    _Local_DelLink_Handler,
+		},
+		{
+			MethodName: "UpdateLinks",
+			Handler:    _Local_UpdateLinks_Handler,
 		},
 		{
 			MethodName: "SetupPod",

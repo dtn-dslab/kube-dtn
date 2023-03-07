@@ -65,6 +65,11 @@ message DelLinkQuery {
   Link link = 2;
 }
 
+message LinksBatchQuery {
+  Pod local_pod = 1;
+  repeated Link links = 2;
+}
+
 message SetupPodQuery {
   string name = 1;
   string kube_ns = 2;
@@ -163,6 +168,7 @@ service Local {
   rpc IsSkipped (SkipQuery) returns (BoolResponse);
   rpc AddLink (AddLinkQuery) returns (BoolResponse);
   rpc DelLink (DelLinkQuery) returns (BoolResponse);
+  rpc UpdateLinks (LinksBatchQuery) returns (BoolResponse);
   rpc SetupPod (SetupPodQuery) returns (BoolResponse);
   rpc DestroyPod (PodQuery) returns (BoolResponse);
 

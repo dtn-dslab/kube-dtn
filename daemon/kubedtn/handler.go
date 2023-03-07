@@ -483,7 +483,7 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 					return err
 				}
 				logger.Infof("Adding the new veth link to both pods")
-				if err = m.makeVeth(myVeth, peerVeth, link); err != nil {
+				if err = common.SetupVeth(myVeth, peerVeth, link); err != nil {
 					logger.Infof("Error creating VEth pair after peer link remove: %s", err)
 					return err
 				}
@@ -494,7 +494,7 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 					return err
 				}
 				logger.Infof("Adding the new veth link to both pods")
-				if err = m.makeVeth(myVeth, peerVeth, link); err != nil {
+				if err = common.SetupVeth(myVeth, peerVeth, link); err != nil {
 					logger.Infof("Error creating VEth pair after local link remove: %s", err)
 					return err
 				}
@@ -517,7 +517,7 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 
 				if isSkipped.Response || higherPrio { // If peer POD skipped us (booted before us) or we have a higher priority
 					logger.Infof("Peer POD has skipped us or we have a higher priority")
-					if err = m.makeVeth(myVeth, peerVeth, link); err != nil {
+					if err = common.SetupVeth(myVeth, peerVeth, link); err != nil {
 						logger.Infof("Error when creating a new VEth pair with koko: %s", err)
 						logger.Infof("MY VETH STRUCT: %+v", spew.Sdump(myVeth))
 						logger.Infof("PEER STRUCT: %+v", spew.Sdump(peerVeth))
@@ -550,7 +550,7 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 					return err
 				}
 			}
-			if err = common.MakeVxLan(myVeth, vxlan, link); err != nil {
+			if err = common.SetupVxLan(myVeth, vxlan, link); err != nil {
 				logger.Infof("Error when creating a Vxlan interface with koko: %s", err)
 				return err
 			}
@@ -576,29 +576,6 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 			logger.Infof("Failed to set a skipped flag on peer %s", peerPod.Name)
 			return err
 		}
-	}
-	return nil
-}
-
-func (m *KubeDTN) makeVeth(self *koko.VEth, peer *koko.VEth, link *pb.Link) error {
-	err := koko.MakeVeth(*self, *peer)
-	if err != nil {
-		return err
-	}
-	qdiscs, err := common.MakeQdiscs(link.Properties)
-	if err != nil {
-		logger.Errorf("Failed to construct qdiscs: %s", err)
-		return err
-	}
-	err = common.SetVethQdiscs(self, qdiscs)
-	if err != nil {
-		logger.Errorf("Failed to set qdisc on self veth %s: %v", self, err)
-		return err
-	}
-	err = common.SetVethQdiscs(peer, qdiscs)
-	if err != nil {
-		logger.Errorf("Failed to set qdisc on peer veth %s: %v", self, err)
-		return err
 	}
 	return nil
 }
@@ -755,6 +732,27 @@ func (m *KubeDTN) DelLink(ctx context.Context, query *pb.DelLinkQuery) (*pb.Bool
 	err := m.delLink(ctx, query.LocalPod, query.Link)
 	if err != nil {
 		return &pb.BoolResponse{Response: false}, err
+	}
+	return &pb.BoolResponse{Response: true}, nil
+}
+
+func (m *KubeDTN) UpdateLinks(ctx context.Context, query *pb.LinksBatchQuery) (*pb.BoolResponse, error) {
+	localPod := query.LocalPod
+	for _, link := range query.Links {
+		myVeth, err := common.MakeVeth(localPod.NetNs, link.LocalIntf, link.LocalIp, link.LocalMac)
+		if err != nil {
+			return &pb.BoolResponse{Response: false}, nil
+		}
+		qdiscs, err := common.MakeQdiscs(link.Properties)
+		if err != nil {
+			logger.Errorf("Failed to construct qdiscs: %s", err)
+			return &pb.BoolResponse{Response: false}, err
+		}
+		err = common.SetVethQdiscs(myVeth, qdiscs)
+		if err != nil {
+			logger.Errorf("Failed to update qdiscs on self veth %s: %v", myVeth, err)
+			return &pb.BoolResponse{Response: false}, err
+		}
 	}
 	return &pb.BoolResponse{Response: true}, nil
 }

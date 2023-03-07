@@ -101,7 +101,7 @@ func addLink(link *pb.Link, srcIntf string, peerIP string) error {
 			return err
 		}
 	}
-	if err = common.MakeVxLan(myVeth, vxlan, link); err != nil {
+	if err = common.SetupVxLan(myVeth, vxlan, link); err != nil {
 		log.Infof("Error when creating a Vxlan interface with koko: %s", err)
 		return err
 	}

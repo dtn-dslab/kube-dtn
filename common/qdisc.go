@@ -265,9 +265,9 @@ func SetVethQdiscs(veth *koko.VEth, qdiscs []netlink.Qdisc) (err error) {
 				log.Errorf("Unsupported qdisc type %s", qdisc.Type())
 			}
 
-			log.Infof("Adding qdisc %v to link %s", qdisc, veth.LinkName)
+			log.Infof("Setting qdisc %v on link %s", qdisc, veth.LinkName)
 			if err != nil {
-				log.Errorf("Failed to add qdisc %v to link %s: %v", qdisc, veth.LinkName, err)
+				log.Errorf("Failed to set qdisc %v to link %s: %v", qdisc, veth.LinkName, err)
 				return err
 			}
 		}

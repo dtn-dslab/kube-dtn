@@ -12,6 +12,14 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
+func Map[T, U any](ts []T, f func(T) U) []U {
+	us := make([]U, len(ts))
+	for i := range ts {
+		us[i] = f(ts[i])
+	}
+	return us
+}
+
 // Uses netlink to get the iface reliably given an IP address.
 func GetVxlanSource(nodeIP string) (string, string, error) {
 	if nodeIP == "" {
@@ -70,6 +78,26 @@ func MakeVeth(netNS, linkName string, ip string, mac string) (*koko.VEth, error)
 	return &veth, nil
 }
 
+func SetupVeth(self *koko.VEth, peer *koko.VEth, link *pb.Link) error {
+	err := koko.MakeVeth(*self, *peer)
+	if err != nil {
+		return err
+	}
+	qdiscs, err := MakeQdiscs(link.Properties)
+	if err != nil {
+		return fmt.Errorf("failed to construct qdiscs: %s", err)
+	}
+	err = SetVethQdiscs(self, qdiscs)
+	if err != nil {
+		return fmt.Errorf("failed to set qdiscs on self veth %s: %v", self, err)
+	}
+	err = SetVethQdiscs(peer, qdiscs)
+	if err != nil {
+		return fmt.Errorf("failed to set qdiscs on peer veth %s: %v", self, err)
+	}
+	return nil
+}
+
 // Creates koko.Vxlan from ParentIF, destination IP and VNI
 func MakeVxlan(srcIntf string, peerIP string, idx int64) *koko.VxLan {
 	return &koko.VxLan{
@@ -110,7 +138,7 @@ func UpdateRemote(ctx context.Context, localPod *pb.Pod, peerPod *pb.Pod, link *
 }
 
 // Set up VXLAN link with qdiscs
-func MakeVxLan(self *koko.VEth, vxlan *koko.VxLan, link *pb.Link) error {
+func SetupVxLan(self *koko.VEth, vxlan *koko.VxLan, link *pb.Link) error {
 	err := koko.MakeVxLan(*self, *vxlan)
 	if err != nil {
 		return err
