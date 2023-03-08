@@ -45,6 +45,12 @@ func main() {
 		log.Debug("Verbose logging enabled")
 	}
 
+	log.SetFormatter(&log.TextFormatter{
+		TimestampFormat: "2006-01-02 15:04:05.000",
+		ForceColors:     true,
+		FullTimestamp:   true,
+	})
+
 	kubedtn.InitLogger()
 	grpcwire.InitLogger()
 	vxlan.InitLogger()

@@ -123,7 +123,7 @@ func getLinkFromNS(nsName string, linkName string) netlink.Link {
 		return err
 	})
 	if err != nil {
-		vxlanLogger.Warnf("failed to get link: %s", linkName)
+		vxlanLogger.Infof("Failed to get link: %s", linkName)
 	}
 
 	return result

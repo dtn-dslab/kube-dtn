@@ -21,7 +21,7 @@ FROM golang:1.18.2 AS build_base
 
 
 WORKDIR /go/src/github.com/y-young/kube-dtn
-ENV CGO_ENABLED=0 GOPROXY=https://mirrors.aliyun.com/goproxy/
+ENV CGO_ENABLED=0 GOPROXY=https://goproxy.io
 COPY go.mod .
 COPY go.sum .
 RUN go mod download; \
@@ -39,14 +39,15 @@ ARG LDFLAGS
 ARG TARGETOS
 ARG TARGETARCH
 
+COPY go.mod .
+COPY go.sum .
+
 COPY daemon/ daemon/
 COPY api/ api/
 COPY proto/ proto/
 COPY plugin/ plugin/
 COPY common/ common/
 COPY --from=proto_base /src/ .
-COPY go.mod .
-COPY go.sum .
 
 RUN GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -o kubedtn github.com/y-young/kube-dtn/plugin 
 RUN GOOS=${TARGETOS} CGO_ENABLED=1 GOARCH=${TARGETARCH} go build -ldflags="-s -w" -o kubedtnd daemon/main.go; 

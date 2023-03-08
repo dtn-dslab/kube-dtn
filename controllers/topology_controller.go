@@ -148,7 +148,7 @@ func (r *TopologyReconciler) AddLinks(ctx context.Context, topology *v1.Topology
 		log.Error(err, "Failed to add links")
 		return err
 	}
-	log.Info("Successfully added links")
+	log.Info("Successfully added links", "links", common.Map(links, func(link v1.Link) int { return link.UID }))
 	return nil
 }
 
@@ -179,7 +179,7 @@ func (r *TopologyReconciler) DelLinks(ctx context.Context, topology *v1.Topology
 		log.Error(err, "Failed to delete links")
 		return err
 	}
-	log.Info("Successfully deleted links")
+	log.Info("Successfully deleted links", "links", common.Map(links, func(link v1.Link) int { return link.UID }))
 	return nil
 }
 
@@ -210,7 +210,7 @@ func (r *TopologyReconciler) UpdateLinks(ctx context.Context, topology *v1.Topol
 		log.Error(err, "Failed to delete link")
 		return err
 	}
-	log.Info("Successfully updated links")
+	log.Info("Successfully updated links", "links", common.Map(links, func(link v1.Link) int { return link.UID }))
 	return err
 }
 
