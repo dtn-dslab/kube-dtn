@@ -128,33 +128,28 @@ func (r *TopologyReconciler) AddLinks(ctx context.Context, topology *v1.Topology
 
 	log := log.FromContext(ctx)
 
-	daemonAddr := topology.Status.SrcIP + ":" + common.DefaultPort
-	conn, err := grpc.Dial(daemonAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := ConnectDaemon(ctx, topology.Status.SrcIP)
 	if err != nil {
-		log.Error(err, "Failed to connect to daemon", "daemonAddr", daemonAddr)
 		return err
 	}
 	defer conn.Close()
 	kubedtnClient := pb.NewLocalClient(conn)
 
-	for _, link := range links {
-		log = log.WithValues("link", link)
-		result, err := kubedtnClient.AddLink(ctx, &pb.AddLinkQuery{
-			LocalPod: &pb.Pod{
-				Name:   topology.Name,
-				SrcIp:  topology.Status.SrcIP,
-				NetNs:  topology.Status.NetNs,
-				KubeNs: topology.Namespace,
-			},
-			Link: link.ToProto(),
-		})
-		if err != nil || !result.GetResponse() {
-			log.Error(err, "Failed to add link")
-			return err
-		}
-		log.Info("Successfully added link")
+	result, err := kubedtnClient.AddLinks(ctx, &pb.LinksBatchQuery{
+		LocalPod: &pb.Pod{
+			Name:   topology.Name,
+			SrcIp:  topology.Status.SrcIP,
+			NetNs:  topology.Status.NetNs,
+			KubeNs: topology.Namespace,
+		},
+		Links: common.Map(links, func(link v1.Link) *pb.Link { return link.ToProto() }),
+	})
+	if err != nil || !result.GetResponse() {
+		log.Error(err, "Failed to add links")
+		return err
 	}
-	return err
+	log.Info("Successfully added links")
+	return nil
 }
 
 func (r *TopologyReconciler) DelLinks(ctx context.Context, topology *v1.Topology, links []v1.Link) error {
@@ -164,33 +159,28 @@ func (r *TopologyReconciler) DelLinks(ctx context.Context, topology *v1.Topology
 
 	log := log.FromContext(ctx)
 
-	daemonAddr := topology.Status.SrcIP + ":" + common.DefaultPort
-	conn, err := grpc.Dial(daemonAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := ConnectDaemon(ctx, topology.Status.SrcIP)
 	if err != nil {
-		log.Error(err, "Failed to connect to daemon", "daemonAddr", daemonAddr)
 		return err
 	}
 	defer conn.Close()
 	kubedtnClient := pb.NewLocalClient(conn)
 
-	for _, link := range links {
-		log = log.WithValues("link", link)
-		result, err := kubedtnClient.DelLink(ctx, &pb.DelLinkQuery{
-			LocalPod: &pb.Pod{
-				Name:   topology.Name,
-				SrcIp:  topology.Status.SrcIP,
-				NetNs:  topology.Status.NetNs,
-				KubeNs: topology.Namespace,
-			},
-			Link: link.ToProto(),
-		})
-		if err != nil || !result.GetResponse() {
-			log.Error(err, "Failed to delete link")
-			return err
-		}
-		log.Info("Successfully deleted link")
+	result, err := kubedtnClient.DelLinks(ctx, &pb.LinksBatchQuery{
+		LocalPod: &pb.Pod{
+			Name:   topology.Name,
+			SrcIp:  topology.Status.SrcIP,
+			NetNs:  topology.Status.NetNs,
+			KubeNs: topology.Namespace,
+		},
+		Links: common.Map(links, func(link v1.Link) *pb.Link { return link.ToProto() }),
+	})
+	if err != nil || !result.GetResponse() {
+		log.Error(err, "Failed to delete links")
+		return err
 	}
-	return err
+	log.Info("Successfully deleted links")
+	return nil
 }
 
 func (r *TopologyReconciler) UpdateLinks(ctx context.Context, topology *v1.Topology, links []v1.Link) error {
@@ -200,10 +190,8 @@ func (r *TopologyReconciler) UpdateLinks(ctx context.Context, topology *v1.Topol
 
 	log := log.FromContext(ctx)
 
-	daemonAddr := topology.Status.SrcIP + ":" + common.DefaultPort
-	conn, err := grpc.Dial(daemonAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := ConnectDaemon(ctx, topology.Status.SrcIP)
 	if err != nil {
-		log.Error(err, "Failed to connect to daemon", "daemonAddr", daemonAddr)
 		return err
 	}
 	defer conn.Close()
@@ -257,6 +245,17 @@ func (r *TopologyReconciler) CalcDiff(old []v1.Link, new []v1.Link) (add []v1.Li
 		}
 	}
 	return
+}
+
+func ConnectDaemon(ctx context.Context, ip string) (*grpc.ClientConn, error) {
+	log := log.FromContext(ctx)
+	daemonAddr := ip + ":" + common.DefaultPort
+	conn, err := grpc.Dial(daemonAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		log.Error(err, "Failed to connect to daemon", "address", daemonAddr)
+		return nil, err
+	}
+	return conn, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

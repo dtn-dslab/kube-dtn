@@ -653,11 +653,8 @@ func (m *KubeDTN) SetupPod(ctx context.Context, pod *pb.SetupPodQuery) (*pb.Bool
 
 	logger.Info("Starting to traverse all links")
 	for _, link := range localPod.Links {
-		ok, err = m.AddLink(ctx, &pb.AddLinkQuery{
-			LocalPod: localPod,
-			Link:     link,
-		})
-		if err != nil || !ok.Response {
+		err = m.addLink(ctx, localPod, link)
+		if err != nil {
 			logger.Infof("Failed to add link %s: %s", link.String(), err)
 			return &pb.BoolResponse{Response: false}, err
 		}
@@ -720,18 +717,34 @@ func (m *KubeDTN) DestroyPod(ctx context.Context, pod *pb.PodQuery) (*pb.BoolRes
 	return &pb.BoolResponse{Response: true}, nil
 }
 
-func (m *KubeDTN) AddLink(ctx context.Context, query *pb.AddLinkQuery) (*pb.BoolResponse, error) {
-	err := m.addLink(ctx, query.LocalPod, query.Link)
-	if err != nil {
-		return &pb.BoolResponse{Response: false}, err
+func (m *KubeDTN) AddLinks(ctx context.Context, query *pb.LinksBatchQuery) (*pb.BoolResponse, error) {
+	localPod := query.LocalPod
+	logger = logger.WithFields(log.Fields{
+		"pod": localPod.Name,
+		"ns":  localPod.KubeNs,
+	})
+	for _, link := range query.Links {
+		err := m.addLink(ctx, localPod, link)
+		if err != nil {
+			logger.WithField("link", link.Uid).Errorf("Failed to add link: %v", err)
+			return &pb.BoolResponse{Response: false}, err
+		}
 	}
 	return &pb.BoolResponse{Response: true}, nil
 }
 
-func (m *KubeDTN) DelLink(ctx context.Context, query *pb.DelLinkQuery) (*pb.BoolResponse, error) {
-	err := m.delLink(ctx, query.LocalPod, query.Link)
-	if err != nil {
-		return &pb.BoolResponse{Response: false}, err
+func (m *KubeDTN) DelLinks(ctx context.Context, query *pb.LinksBatchQuery) (*pb.BoolResponse, error) {
+	localPod := query.LocalPod
+	logger = logger.WithFields(log.Fields{
+		"pod": localPod.Name,
+		"ns":  localPod.KubeNs,
+	})
+	for _, link := range query.Links {
+		err := m.delLink(ctx, localPod, link)
+		if err != nil {
+			logger.WithField("link", link.Uid).Errorf("Failed to delete link: %v", err)
+			return &pb.BoolResponse{Response: false}, err
+		}
 	}
 	return &pb.BoolResponse{Response: true}, nil
 }

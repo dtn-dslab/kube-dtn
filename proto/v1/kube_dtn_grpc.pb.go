@@ -27,8 +27,8 @@ type LocalClient interface {
 	SkipReverse(ctx context.Context, in *SkipQuery, opts ...grpc.CallOption) (*BoolResponse, error)
 	Skip(ctx context.Context, in *SkipQuery, opts ...grpc.CallOption) (*BoolResponse, error)
 	IsSkipped(ctx context.Context, in *SkipQuery, opts ...grpc.CallOption) (*BoolResponse, error)
-	AddLink(ctx context.Context, in *AddLinkQuery, opts ...grpc.CallOption) (*BoolResponse, error)
-	DelLink(ctx context.Context, in *DelLinkQuery, opts ...grpc.CallOption) (*BoolResponse, error)
+	AddLinks(ctx context.Context, in *LinksBatchQuery, opts ...grpc.CallOption) (*BoolResponse, error)
+	DelLinks(ctx context.Context, in *LinksBatchQuery, opts ...grpc.CallOption) (*BoolResponse, error)
 	UpdateLinks(ctx context.Context, in *LinksBatchQuery, opts ...grpc.CallOption) (*BoolResponse, error)
 	SetupPod(ctx context.Context, in *SetupPodQuery, opts ...grpc.CallOption) (*BoolResponse, error)
 	DestroyPod(ctx context.Context, in *PodQuery, opts ...grpc.CallOption) (*BoolResponse, error)
@@ -94,18 +94,18 @@ func (c *localClient) IsSkipped(ctx context.Context, in *SkipQuery, opts ...grpc
 	return out, nil
 }
 
-func (c *localClient) AddLink(ctx context.Context, in *AddLinkQuery, opts ...grpc.CallOption) (*BoolResponse, error) {
+func (c *localClient) AddLinks(ctx context.Context, in *LinksBatchQuery, opts ...grpc.CallOption) (*BoolResponse, error) {
 	out := new(BoolResponse)
-	err := c.cc.Invoke(ctx, "/proto.v1.Local/AddLink", in, out, opts...)
+	err := c.cc.Invoke(ctx, "/proto.v1.Local/AddLinks", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *localClient) DelLink(ctx context.Context, in *DelLinkQuery, opts ...grpc.CallOption) (*BoolResponse, error) {
+func (c *localClient) DelLinks(ctx context.Context, in *LinksBatchQuery, opts ...grpc.CallOption) (*BoolResponse, error) {
 	out := new(BoolResponse)
-	err := c.cc.Invoke(ctx, "/proto.v1.Local/DelLink", in, out, opts...)
+	err := c.cc.Invoke(ctx, "/proto.v1.Local/DelLinks", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -184,8 +184,8 @@ type LocalServer interface {
 	SkipReverse(context.Context, *SkipQuery) (*BoolResponse, error)
 	Skip(context.Context, *SkipQuery) (*BoolResponse, error)
 	IsSkipped(context.Context, *SkipQuery) (*BoolResponse, error)
-	AddLink(context.Context, *AddLinkQuery) (*BoolResponse, error)
-	DelLink(context.Context, *DelLinkQuery) (*BoolResponse, error)
+	AddLinks(context.Context, *LinksBatchQuery) (*BoolResponse, error)
+	DelLinks(context.Context, *LinksBatchQuery) (*BoolResponse, error)
 	UpdateLinks(context.Context, *LinksBatchQuery) (*BoolResponse, error)
 	SetupPod(context.Context, *SetupPodQuery) (*BoolResponse, error)
 	DestroyPod(context.Context, *PodQuery) (*BoolResponse, error)
@@ -218,11 +218,11 @@ func (UnimplementedLocalServer) Skip(context.Context, *SkipQuery) (*BoolResponse
 func (UnimplementedLocalServer) IsSkipped(context.Context, *SkipQuery) (*BoolResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method IsSkipped not implemented")
 }
-func (UnimplementedLocalServer) AddLink(context.Context, *AddLinkQuery) (*BoolResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method AddLink not implemented")
+func (UnimplementedLocalServer) AddLinks(context.Context, *LinksBatchQuery) (*BoolResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AddLinks not implemented")
 }
-func (UnimplementedLocalServer) DelLink(context.Context, *DelLinkQuery) (*BoolResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method DelLink not implemented")
+func (UnimplementedLocalServer) DelLinks(context.Context, *LinksBatchQuery) (*BoolResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DelLinks not implemented")
 }
 func (UnimplementedLocalServer) UpdateLinks(context.Context, *LinksBatchQuery) (*BoolResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateLinks not implemented")
@@ -348,38 +348,38 @@ func _Local_IsSkipped_Handler(srv interface{}, ctx context.Context, dec func(int
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Local_AddLink_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(AddLinkQuery)
+func _Local_AddLinks_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LinksBatchQuery)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(LocalServer).AddLink(ctx, in)
+		return srv.(LocalServer).AddLinks(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/proto.v1.Local/AddLink",
+		FullMethod: "/proto.v1.Local/AddLinks",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(LocalServer).AddLink(ctx, req.(*AddLinkQuery))
+		return srv.(LocalServer).AddLinks(ctx, req.(*LinksBatchQuery))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Local_DelLink_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(DelLinkQuery)
+func _Local_DelLinks_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LinksBatchQuery)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(LocalServer).DelLink(ctx, in)
+		return srv.(LocalServer).DelLinks(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/proto.v1.Local/DelLink",
+		FullMethod: "/proto.v1.Local/DelLinks",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(LocalServer).DelLink(ctx, req.(*DelLinkQuery))
+		return srv.(LocalServer).DelLinks(ctx, req.(*LinksBatchQuery))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -538,12 +538,12 @@ var Local_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Local_IsSkipped_Handler,
 		},
 		{
-			MethodName: "AddLink",
-			Handler:    _Local_AddLink_Handler,
+			MethodName: "AddLinks",
+			Handler:    _Local_AddLinks_Handler,
 		},
 		{
-			MethodName: "DelLink",
-			Handler:    _Local_DelLink_Handler,
+			MethodName: "DelLinks",
+			Handler:    _Local_DelLinks_Handler,
 		},
 		{
 			MethodName: "UpdateLinks",
