@@ -249,7 +249,7 @@ func (r *TopologyReconciler) CalcDiff(old []v1.Link, new []v1.Link) (add []v1.Li
 
 func ConnectDaemon(ctx context.Context, ip string) (*grpc.ClientConn, error) {
 	log := log.FromContext(ctx)
-	daemonAddr := ip + ":" + common.DefaultPort
+	daemonAddr := "passthrough:///" + ip + ":" + common.DefaultPort
 	conn, err := grpc.Dial(daemonAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Error(err, "Failed to connect to daemon", "address", daemonAddr)

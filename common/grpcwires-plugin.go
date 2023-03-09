@@ -149,7 +149,7 @@ func CreateGRPCChan(link *pb.Link, localPod *pb.Pod, peerPod *pb.Pod, server pb.
 
 	/* Dial the remote peer to create the remote end of the grpc tunnel. */
 
-	url := fmt.Sprintf("%s:%s", peerPod.SrcIp, DefaultPort)
+	url := fmt.Sprintf("passthrough:///%s:%s", peerPod.SrcIp, DefaultPort)
 	url = strings.TrimSpace(url)
 	remote, err := grpc.Dial(url, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
