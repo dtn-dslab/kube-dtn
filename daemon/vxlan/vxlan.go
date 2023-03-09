@@ -10,9 +10,17 @@ import (
 	"github.com/redhat-nfvpe/koko/api"
 	log "github.com/sirupsen/logrus"
 	"github.com/vishvananda/netlink"
-
-	pb "github.com/y-young/kube-dtn/proto/v1"
 )
+
+type VxlanSpec struct {
+	NetNs    string
+	IntfName string
+	IntfIp   string
+	PeerVtep string
+	Vni      int32
+	// IP of VXLAN source interface
+	SrcIp string
+}
 
 var vxlanLogger *log.Entry = nil
 
@@ -21,12 +29,20 @@ func InitLogger() {
 }
 
 // CreateOrUpdate creates or updates the vxlan on the node.
-func CreateOrUpdate(v *pb.RemotePod) (*api.VEth, error) {
-	/// Looking up default interface
-	_, srcIntf, err := getSource()
+func CreateOrUpdate(v *VxlanSpec) (*api.VEth, error) {
+	var err error
+	// Looking up VXLAN source interface
+	var srcIP string
+	var srcIntf string
+	if v.SrcIp == "" {
+		srcIP, srcIntf, err = GetDefaultVxlanSource()
+	} else {
+		srcIP, srcIntf, err = GetVxlanSource(v.SrcIp)
+	}
 	if err != nil {
 		return nil, err
 	}
+	vxlanLogger.Infof("VXLAN route is via %s@%s", srcIP, srcIntf)
 
 	// Creating koko Veth struct
 	veth := api.VEth{
@@ -38,7 +54,7 @@ func CreateOrUpdate(v *pb.RemotePod) (*api.VEth, error) {
 	if v.IntfIp != "" {
 		ipAddr, ipSubnet, err := net.ParseCIDR(v.IntfIp)
 		if err != nil {
-			return nil, fmt.Errorf("kubedtnd: Error parsing CIDR %s: %s", v.IntfIp, err)
+			return nil, fmt.Errorf("error parsing CIDR %s: %s", v.IntfIp, err)
 		}
 		veth.IPAddr = []net.IPNet{{
 			IP:   ipAddr,
@@ -69,14 +85,14 @@ func CreateOrUpdate(v *pb.RemotePod) (*api.VEth, error) {
 			// We remove the existing link and add a new one
 			vxlanLogger.Infof("Vxlan attrs are different: %d!=%d or %v!=%v", vxlanLink.VxlanId, vxlan.ID, vxlanLink.Group, vxlan.IPAddr)
 			if err = veth.RemoveVethLink(); err != nil {
-				return nil, fmt.Errorf("kubedtnd: Error when removing an old Vxlan interface with koko: %s", err)
+				return nil, fmt.Errorf("error when removing an old Vxlan interface with koko: %s", err)
 			}
 
 			if err = api.MakeVxLan(veth, vxlan); err != nil {
 				if strings.Contains(err.Error(), "file exists") {
-					vxlanLogger.Infof("kubedtnd: Error when creating a Vxlan interface with koko, file exists")
+					vxlanLogger.Infof("error when creating a Vxlan interface with koko, file exists")
 				} else {
-					return nil, fmt.Errorf("kubedtnd: Error when re-creating a Vxlan interface with koko: %s", err)
+					return nil, fmt.Errorf("error when re-creating a Vxlan interface with koko: %s", err)
 				}
 			}
 		} // If Vxlan attrs are the same, do nothing
@@ -88,7 +104,7 @@ func CreateOrUpdate(v *pb.RemotePod) (*api.VEth, error) {
 		if link != nil {
 			vxlanLogger.Infof("Attempting to remove link %+v", veth)
 			if err = veth.RemoveVethLink(); err != nil {
-				return nil, fmt.Errorf("kubedtnd: Error when removing an old non-Vxlan interface with koko: %s", err)
+				return nil, fmt.Errorf("error when removing an old non-Vxlan interface with koko: %s", err)
 			}
 		}
 
@@ -96,9 +112,9 @@ func CreateOrUpdate(v *pb.RemotePod) (*api.VEth, error) {
 		vxlanLogger.Infof("Creating a VXLAN link: %v; inside the pod: %v", vxlan, veth)
 		if err = api.MakeVxLan(veth, vxlan); err != nil {
 			if strings.Contains(err.Error(), "file exists") {
-				vxlanLogger.Warnf("kubedtnd: Error when creating a Vxlan interface with koko, file exists")
+				vxlanLogger.Warnf("error when creating a Vxlan interface with koko, file exists")
 			} else {
-				vxlanLogger.Errorf("kubedtnd: Error when creating a new Vxlan interface with koko: %s", err)
+				vxlanLogger.Errorf("error when creating a new Vxlan interface with koko: %s", err)
 				return nil, err
 			}
 		}
@@ -129,20 +145,49 @@ func getLinkFromNS(nsName string, linkName string) netlink.Link {
 	return result
 }
 
+// Uses netlink to get the iface reliably given an IP address.
+func GetVxlanSource(nodeIP string) (srcIP string, srcIntf string, err error) {
+	if nodeIP == "" {
+		return "", "", fmt.Errorf("kubedtnd provided no HOST_IP address: %s", nodeIP)
+	}
+	nIP := net.ParseIP(nodeIP)
+	if nIP == nil {
+		return "", "", fmt.Errorf("parsing failed for kubedtnd provided no HOST_IP address: %s", nodeIP)
+	}
+	ifaces, _ := net.Interfaces()
+	for _, i := range ifaces {
+		addrs, _ := i.Addrs()
+		for _, a := range addrs {
+			var ip net.IP
+			switch v := a.(type) {
+			case *net.IPNet:
+				ip = v.IP
+			case *net.IPAddr:
+				ip = v.IP
+			}
+			if nIP.Equal(ip) {
+				log.Infof("Found iface %s for address %s", i.Name, nodeIP)
+				return nodeIP, i.Name, nil
+			}
+		}
+	}
+	return "", "", fmt.Errorf("no iface found for address %s", nodeIP)
+}
+
 // Uses netlink to query the IP and LinkName of the interface with default route
-func getSource() (string, string, error) {
+func GetDefaultVxlanSource() (srcIP string, srcIntf string, err error) {
 	// Looking up a default route to get the intf and IP for vxlan
 	r, err := netlink.RouteGet(net.IPv4(1, 1, 1, 1))
 	if (err != nil) && len(r) < 1 {
-		return "", "", fmt.Errorf("kubedtnd: Error getting default route: %s\n%+v", err, r)
+		return "", "", fmt.Errorf("error getting default route: %s\n%+v", err, r)
 	}
-	srcIP := r[0].Src.String()
+	srcIP = r[0].Src.String()
 
 	link, err := netlink.LinkByIndex(r[0].LinkIndex)
 	if err != nil {
-		return "", "", fmt.Errorf("kubedtnd: Error looking up link by its index: %s", err)
+		return "", "", fmt.Errorf("error looking up link by its index: %s", err)
 	}
-	srcIntf := link.Attrs().Name
+	srcIntf = link.Attrs().Name
 	return srcIP, srcIntf, nil
 }
 

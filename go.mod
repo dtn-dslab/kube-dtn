@@ -140,4 +140,4 @@ replace (
 	k8s.io/sample-apiserver => k8s.io/sample-apiserver v0.24.4
 )
 
-replace github.com/redhat-nfvpe/koko => github.com/y-young/koko v0.0.0-20230303054241-c7e810deba01
+replace github.com/redhat-nfvpe/koko => github.com/y-young/koko v0.0.0-20230308084304-d0e5ffd83f8a

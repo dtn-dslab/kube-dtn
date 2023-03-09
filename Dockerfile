@@ -17,6 +17,7 @@ RUN go mod download
 COPY main.go main.go
 COPY api/ api/
 COPY common/ common/
+COPY daemon/ daemon/
 COPY proto/ proto/
 COPY controllers/ controllers/
 

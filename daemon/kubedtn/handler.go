@@ -247,21 +247,17 @@ func (m *KubeDTN) Update(ctx context.Context, pod *pb.RemotePod) (*pb.BoolRespon
 	})
 	logger.Infof("Updating pod from remote")
 
-	var veth *koko.VEth
 	var err error
-	if veth, err = vxlan.CreateOrUpdate(pod); err != nil {
-		logger.Errorf("Failed to Update VXLAN")
-		return &pb.BoolResponse{Response: false}, nil
+	vxlanSpec := &vxlan.VxlanSpec{
+		NetNs:    pod.NetNs,
+		IntfName: pod.IntfName,
+		IntfIp:   pod.IntfIp,
+		PeerVtep: pod.PeerVtep,
+		Vni:      pod.Vni,
 	}
-
-	qdiscs, err := common.MakeQdiscs(pod.Properties)
+	err = common.SetupVxLan(vxlanSpec, pod.Properties)
 	if err != nil {
-		logger.Errorf("Failed to construct qdiscs: %s", err)
-		return &pb.BoolResponse{Response: false}, err
-	}
-	err = common.SetVethQdiscs(veth, qdiscs)
-	if err != nil {
-		logger.Errorf("Failed to set qdisc on remote veth %s: %v", veth, err)
+		logger.Errorf("Failed to handle remote update: %v", err)
 		return &pb.BoolResponse{Response: false}, err
 	}
 	return &pb.BoolResponse{Response: true}, nil
@@ -391,12 +387,6 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 	})
 
 	nodeIP := os.Getenv("HOST_IP")
-	// Finding the source IP and interface for VXLAN VTEP
-	srcIP, srcIntf, err := common.GetVxlanSource(nodeIP)
-	if err != nil {
-		return err
-	}
-	logger.Infof("VxLan route is via %s@%s", srcIP, srcIntf)
 
 	// Build koko's veth struct for local intf
 	myVeth, err := common.MakeVeth(localPod.NetNs, link.LocalIntf, link.LocalIp, link.LocalMac)
@@ -430,7 +420,7 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 			IntfName:   link.LocalIntf,
 			IntfIp:     link.LocalIp,
 			PeerVtep:   srcIp,
-			Vni:        link.Uid + common.VxlanBase,
+			Vni:        common.GetVniFromUid(link.Uid),
 			KubeNs:     localPod.KubeNs,
 			Properties: link.Properties,
 			Name:       link.PeerPod,
@@ -445,7 +435,6 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 
 	// Virtual-virtual link
 	// Initialising peer pod's metadata
-	logger.Infof("Retrieving peer pod %s information", link.PeerPod)
 	peerPod, err := m.Get(ctx, &pb.PodQuery{
 		Name:   link.PeerPod,
 		KubeNs: localPod.KubeNs,
@@ -483,7 +472,7 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 					return err
 				}
 				logger.Infof("Adding the new veth link to both pods")
-				if err = common.SetupVeth(myVeth, peerVeth, link); err != nil {
+				if err = common.SetupVeth(myVeth, peerVeth, link.Properties); err != nil {
 					logger.Infof("Error creating VEth pair after peer link remove: %s", err)
 					return err
 				}
@@ -494,7 +483,7 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 					return err
 				}
 				logger.Infof("Adding the new veth link to both pods")
-				if err = common.SetupVeth(myVeth, peerVeth, link); err != nil {
+				if err = common.SetupVeth(myVeth, peerVeth, link.Properties); err != nil {
 					logger.Infof("Error creating VEth pair after local link remove: %s", err)
 					return err
 				}
@@ -517,7 +506,7 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 
 				if isSkipped.Response || higherPrio { // If peer POD skipped us (booted before us) or we have a higher priority
 					logger.Infof("Peer POD has skipped us or we have a higher priority")
-					if err = common.SetupVeth(myVeth, peerVeth, link); err != nil {
+					if err = common.SetupVeth(myVeth, peerVeth, link.Properties); err != nil {
 						logger.Infof("Error when creating a new VEth pair with koko: %s", err)
 						logger.Infof("MY VETH STRUCT: %+v", spew.Sdump(myVeth))
 						logger.Infof("PEER STRUCT: %+v", spew.Sdump(peerVeth))
@@ -539,19 +528,17 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 				}
 				return nil
 			}
-			// Creating koko's Vxlan struct
-			vxlan := common.MakeVxlan(srcIntf, peerPod.SrcIp, link.Uid)
-			// Checking if interface already exists
-			iExist, _ := koko.IsExistLinkInNS(myVeth.NsName, myVeth.LinkName)
-			if iExist { // If VXLAN intf exists, we need to remove it first
-				logger.Infof("VXLAN intf already exists, removing it first")
-				if err := myVeth.RemoveVethLink(); err != nil {
-					logger.Infof("Failed to remove a local stale VXLAN interface %s for pod %s", myVeth.LinkName, localPod.Name)
-					return err
-				}
+
+			vxlanSpec := &vxlan.VxlanSpec{
+				NetNs:    localPod.NetNs,
+				IntfName: link.LocalIntf,
+				IntfIp:   link.LocalIp,
+				PeerVtep: peerPod.SrcIp,
+				Vni:      common.GetVniFromUid(link.Uid),
+				SrcIp:    nodeIP,
 			}
-			if err = common.SetupVxLan(myVeth, vxlan, link); err != nil {
-				logger.Infof("Error when creating a Vxlan interface with koko: %s", err)
+			if err = common.SetupVxLan(vxlanSpec, link.Properties); err != nil {
+				logger.Infof("Error when setting up VXLAN interface with koko: %s", err)
 				return err
 			}
 
@@ -635,7 +622,7 @@ func (m *KubeDTN) SetupPod(ctx context.Context, pod *pb.SetupPodQuery) (*pb.Bool
 	}
 
 	// Finding the source IP and interface for VXLAN VTEP
-	srcIP, srcIntf, err := common.GetVxlanSource(localPod.NodeIp)
+	srcIP, srcIntf, err := vxlan.GetVxlanSource(localPod.NodeIp)
 	if err != nil {
 		return &pb.BoolResponse{Response: false}, err
 	}

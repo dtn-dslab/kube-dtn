@@ -6,10 +6,10 @@ import (
 	"strings"
 
 	"github.com/goccy/go-yaml"
-	koko "github.com/redhat-nfvpe/koko/api"
 	log "github.com/sirupsen/logrus"
 	"github.com/vishvananda/netlink"
 	"github.com/y-young/kube-dtn/common"
+	"github.com/y-young/kube-dtn/daemon/vxlan"
 	pb "github.com/y-young/kube-dtn/proto/v1"
 )
 
@@ -83,25 +83,15 @@ func getVxlanSource() (intf string, ip string) {
 }
 
 func addLink(link *pb.Link, srcIntf string, peerIP string) error {
-	// Build koko's veth struct for local intf
 	// We're connecting physical host interface, so use root network namespace
-	myVeth, err := common.MakeVeth("", link.LocalIntf, link.LocalIp, "")
-	if err != nil {
-		return err
+	vxlanSpec := &vxlan.VxlanSpec{
+		NetNs:    "",
+		IntfName: link.LocalIntf,
+		IntfIp:   link.LocalIp,
+		PeerVtep: peerIP,
+		Vni:      common.GetVniFromUid(link.Uid),
 	}
-
-	// Creating koko's Vxlan struct
-	vxlan := common.MakeVxlan(srcIntf, peerIP, link.Uid)
-	// Checking if interface already exists
-	iExist, _ := koko.IsExistLinkInNS(myVeth.NsName, myVeth.LinkName)
-	if iExist { // If VXLAN intf exists, we need to remove it first
-		log.Infof("VXLAN intf already exists, removing it first")
-		if err := myVeth.RemoveVethLink(); err != nil {
-			log.Infof("Failed to remove a local stale VXLAN interface %s for pod %s", myVeth.LinkName, "local")
-			return err
-		}
-	}
-	if err = common.SetupVxLan(myVeth, vxlan, link); err != nil {
+	if err := common.SetupVxLan(vxlanSpec, link.Properties); err != nil {
 		log.Infof("Error when creating a Vxlan interface with koko: %s", err)
 		return err
 	}

@@ -80,7 +80,7 @@ message RemotePod {
   // VTEP of VXLAN peer
   string peer_vtep = 4;
   string kube_ns = 5;
-  int64 vni = 6;
+  int32 vni = 6;
   LinkProperties properties = 7;
   // Pod name
   string name = 8;
