@@ -3,15 +3,20 @@ kind: DaemonSet
 metadata:
   name: kubedtn
   labels:
-    k8s-app: kubedtn
+    app.kubernetes.io/name: daemonset
+    app.kubernetes.io/instance: daemon
+    app.kubernetes.io/component: daemon
+    app.kubernetes.io/created-by: kube-dtn
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/part-of: kube-dtn
 spec:
   selector:
     matchLabels:
-      name: kubedtn
+      app.kubernetes.io/instance: daemon
   template:
     metadata:
       labels:
-        name: kubedtn
+        app.kubernetes.io/instance: daemon
     spec:
       hostNetwork: true
       hostPID: true
@@ -50,6 +55,11 @@ spec:
             - name: var-run-netns
               mountPath: /var/run/netns
               mountPropagation: Bidirectional
+          ports:
+            - containerPort: 51111
+              name: grpc
+            - containerPort: 51112
+              name: http
       terminationGracePeriodSeconds: 30
       volumes:
         - name: cni-bin
