@@ -7,6 +7,7 @@ import (
 
 	koko "github.com/redhat-nfvpe/koko/api"
 	log "github.com/sirupsen/logrus"
+	v1 "github.com/y-young/kube-dtn/api/v1"
 	"github.com/y-young/kube-dtn/daemon/vxlan"
 	pb "github.com/y-young/kube-dtn/proto/v1"
 	"google.golang.org/grpc"
@@ -124,4 +125,15 @@ func SetupVxLan(v *vxlan.VxlanSpec, properties *pb.LinkProperties) (err error) {
 		return err
 	}
 	return nil
+}
+
+// Check if local pod is skipped by peer
+func IsSkipped(pod string, peerPod *v1.Topology) bool {
+	skipped := peerPod.Status.Skipped
+	for _, peer := range skipped {
+		if pod == peer {
+			return true
+		}
+	}
+	return false
 }

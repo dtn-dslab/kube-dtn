@@ -45,6 +45,10 @@ func (m *KubeDTN) Get(ctx context.Context, pod *pb.PodQuery) (*pb.Pod, error) {
 		return nil, err
 	}
 
+	return m.ToProtoPod(topology)
+}
+
+func (m *KubeDTN) ToProtoPod(topology *v1.Topology) (*pb.Pod, error) {
 	remoteLinks := topology.Spec.Links
 	if remoteLinks == nil {
 		logger.Errorf("Could not find 'Link' array in pod's spec")
@@ -63,10 +67,10 @@ func (m *KubeDTN) Get(ctx context.Context, pod *pb.PodQuery) (*pb.Pod, error) {
 	nodeIP := os.Getenv("HOST_IP")
 
 	return &pb.Pod{
-		Name:   pod.Name,
+		Name:   topology.Name,
 		SrcIp:  srcIP,
 		NetNs:  netNs,
-		KubeNs: pod.KubeNs,
+		KubeNs: topology.Namespace,
 		Links:  links,
 		NodeIp: nodeIP,
 	}, nil
@@ -229,15 +233,8 @@ func (m *KubeDTN) IsSkipped(ctx context.Context, skip *pb.SkipQuery) (*pb.BoolRe
 		return nil, err
 	}
 
-	skipped := topology.Status.Skipped
-
-	for _, peer := range skipped {
-		if skip.Pod == peer {
-			return &pb.BoolResponse{Response: true}, nil
-		}
-	}
-
-	return &pb.BoolResponse{Response: false}, nil
+	skipped := common.IsSkipped(skip.Pod, topology)
+	return &pb.BoolResponse{Response: skipped}, nil
 }
 
 func (m *KubeDTN) Update(ctx context.Context, pod *pb.RemotePod) (*pb.BoolResponse, error) {
@@ -436,12 +433,16 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 
 	// Virtual-virtual link
 	// Initialising peer pod's metadata
-	peerPod, err := m.Get(ctx, &pb.PodQuery{
-		Name:   link.PeerPod,
-		KubeNs: localPod.KubeNs,
-	})
+	// We need original topology object here so avoid another query
+	// to the API server in IsSkipped
+	peerTopology, err := m.getPod(ctx, link.PeerPod, localPod.KubeNs)
 	if err != nil {
 		logger.Infof("Failed to retrieve peer pod %s/%s topology", localPod.KubeNs, link.PeerPod)
+		return err
+	}
+	peerPod, err := m.ToProtoPod(peerTopology)
+	if err != nil {
+		logger.Infof("Failed to convert peer topology %s/%s to proto pod", localPod.KubeNs, link.PeerPod)
 		return err
 	}
 
@@ -490,22 +491,14 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 				}
 			} else { // if neither link exists, we have two options
 				logger.Infof("Neither link exists. Checking if we've been skipped")
-				isSkipped, err := m.IsSkipped(ctx, &pb.SkipQuery{
-					Pod:    localPod.Name,
-					Peer:   peerPod.Name,
-					KubeNs: localPod.KubeNs,
-				})
-				if err != nil {
-					logger.Infof("Failed to read skipped status from our peer")
-					return err
-				}
-				logger.Infof("Have we been skipped by our peer %s? %t", peerPod.Name, isSkipped.Response)
+				isSkipped := common.IsSkipped(localPod.Name, peerTopology)
+				logger.Infof("Have we been skipped by our peer %s? %t", peerPod.Name, isSkipped)
 
 				// Comparing names to determine higher priority
 				higherPrio := localPod.Name > peerPod.Name
 				logger.Infof("DO we have a higher priority? %t", higherPrio)
 
-				if isSkipped.Response || higherPrio { // If peer POD skipped us (booted before us) or we have a higher priority
+				if isSkipped || higherPrio { // If peer POD skipped us (booted before us) or we have a higher priority
 					logger.Infof("Peer POD has skipped us or we have a higher priority")
 					if err = common.SetupVeth(myVeth, peerVeth, link.Properties); err != nil {
 						logger.Infof("Error when creating a new VEth pair with koko: %s", err)
