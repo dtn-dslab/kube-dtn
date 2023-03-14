@@ -385,6 +385,7 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 		"ns":   localPod.KubeNs,
 		"link": link.Uid,
 	})
+	logger.Infof("Adding link: %v", link)
 
 	nodeIP := os.Getenv("HOST_IP")
 
@@ -573,6 +574,7 @@ func (m *KubeDTN) delLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 		"ns":   localPod.KubeNs,
 		"link": link.Uid,
 	})
+	logger.Infof("Deleting link: %v", link)
 
 	// Creating koko's Veth struct for local intf
 	myVeth, err := common.MakeVeth(localPod.NetNs, link.LocalIntf, link.LocalIp, link.LocalMac)
