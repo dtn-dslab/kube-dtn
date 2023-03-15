@@ -78,7 +78,7 @@ func (m *KubeDTN) ToProtoPod(topology *v1.Topology) (*pb.Pod, error) {
 }
 
 func (m *KubeDTN) SetAlive(ctx context.Context, pod *pb.Pod) (*pb.BoolResponse, error) {
-	logger = logger.WithFields(log.Fields{
+	logger := logger.WithFields(log.Fields{
 		"pod": pod.Name,
 		"ns":  pod.KubeNs,
 	})
@@ -111,7 +111,7 @@ func (m *KubeDTN) SetAlive(ctx context.Context, pod *pb.Pod) (*pb.BoolResponse, 
 }
 
 func (m *KubeDTN) Update(ctx context.Context, pod *pb.RemotePod) (*pb.BoolResponse, error) {
-	logger = logger.WithFields(log.Fields{
+	logger := logger.WithFields(log.Fields{
 		"pod": pod.Name,
 		"ns":  pod.KubeNs,
 	})
@@ -143,7 +143,7 @@ func (m *KubeDTN) RemGRPCWire(ctx context.Context, wireDef *pb.WireDef) (*pb.Boo
 
 // ------------------------------------------------------------------------------------------------------
 func (m *KubeDTN) AddGRPCWireLocal(ctx context.Context, wireDef *pb.WireDef) (*pb.BoolResponse, error) {
-	logger = logger.WithFields(log.Fields{
+	logger := logger.WithFields(log.Fields{
 		"overlay": "gRPC",
 	})
 	locInf, err := net.InterfaceByName(wireDef.VethNameLocalHost)
@@ -190,7 +190,7 @@ func (m *KubeDTN) AddGRPCWireLocal(ctx context.Context, wireDef *pb.WireDef) (*p
 
 // ------------------------------------------------------------------------------------------------------
 func (m *KubeDTN) SendToOnce(ctx context.Context, pkt *pb.Packet) (*pb.BoolResponse, error) {
-	logger = logger.WithFields(log.Fields{
+	logger := logger.WithFields(log.Fields{
 		"overlay": "gRPC",
 	})
 	wrHandle, err := grpcwire.GetHostIntfHndl(pkt.RemotIntfId)
@@ -250,7 +250,7 @@ func (m *KubeDTN) GenerateNodeInterfaceName(ctx context.Context, in *pb.Generate
 }
 
 func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) error {
-	logger = logger.WithFields(log.Fields{
+	logger := logger.WithFields(log.Fields{
 		"pod":  localPod.Name,
 		"ns":   localPod.KubeNs,
 		"link": link.Uid,
@@ -310,12 +310,12 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 	// to the API server in IsSkipped
 	peerTopology, err := m.getPod(ctx, link.PeerPod, localPod.KubeNs)
 	if err != nil {
-		logger.Infof("Failed to retrieve peer pod %s/%s topology", localPod.KubeNs, link.PeerPod)
+		logger.Errorf("Failed to retrieve peer pod %s/%s topology", localPod.KubeNs, link.PeerPod)
 		return err
 	}
 	peerPod, err := m.ToProtoPod(peerTopology)
 	if err != nil {
-		logger.Infof("Failed to convert peer topology %s/%s to proto pod", localPod.KubeNs, link.PeerPod)
+		logger.Errorf("Failed to convert peer topology %s/%s to proto pod", localPod.KubeNs, link.PeerPod)
 		return err
 	}
 
@@ -337,7 +337,7 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 		// Creating koko's Veth struct for peer intf
 		peerVeth, err := common.MakeVeth(peerPod.NetNs, link.PeerIntf, link.PeerIp, link.PeerMac)
 		if err != nil {
-			logger.Infof("Failed to build koko Veth struct")
+			logger.Errorf("Failed to build koko Veth struct")
 			return err
 		}
 
@@ -348,9 +348,10 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 		defer mutex.Unlock()
 		err = common.SetupVeth(logger, myVeth, peerVeth, link, localPod, peerTopology)
 		if err != nil {
-			logger.Infof("Error when creating a new VEth pair with koko: %s", err)
+			logger.Errorf("Error when creating a new VEth pair with koko: %s", err)
 			logger.Infof("SELF VETH STRUCT: %+v", spew.Sdump(myVeth))
 			logger.Infof("PEER VETH STRUCT: %+v", spew.Sdump(peerVeth))
+			return err
 		}
 	} else { // This means we're on different hosts
 		logger.Infof("%s@%s and %s@%s are on different hosts", localPod.Name, localPod.SrcIp, peerPod.Name, peerPod.SrcIp)
@@ -387,7 +388,7 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 }
 
 func (m *KubeDTN) delLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) error {
-	logger = logger.WithFields(log.Fields{
+	logger := logger.WithFields(log.Fields{
 		"pod":  localPod.Name,
 		"ns":   localPod.KubeNs,
 		"link": link.Uid,
@@ -412,7 +413,7 @@ func (m *KubeDTN) delLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 
 // Setup a pod, adding all its VXLAN VTEPs and links
 func (m *KubeDTN) SetupPod(ctx context.Context, pod *pb.SetupPodQuery) (*pb.BoolResponse, error) {
-	logger = logger.WithFields(log.Fields{
+	logger := logger.WithFields(log.Fields{
 		"pod": pod.Name,
 		"ns":  pod.KubeNs,
 	})
@@ -460,7 +461,7 @@ func (m *KubeDTN) SetupPod(ctx context.Context, pod *pb.SetupPodQuery) (*pb.Bool
 
 // Destroy a pod, removing all its GRPC wires and links, the reverse process of SetupPod
 func (m *KubeDTN) DestroyPod(ctx context.Context, pod *pb.PodQuery) (*pb.BoolResponse, error) {
-	logger = logger.WithFields(log.Fields{
+	logger := logger.WithFields(log.Fields{
 		"pod": pod.Name,
 		"ns":  pod.KubeNs,
 	})
@@ -513,7 +514,7 @@ func (m *KubeDTN) DestroyPod(ctx context.Context, pod *pb.PodQuery) (*pb.BoolRes
 
 func (m *KubeDTN) AddLinks(ctx context.Context, query *pb.LinksBatchQuery) (*pb.BoolResponse, error) {
 	localPod := query.LocalPod
-	logger = logger.WithFields(log.Fields{
+	logger := logger.WithFields(log.Fields{
 		"pod": localPod.Name,
 		"ns":  localPod.KubeNs,
 	})
@@ -529,7 +530,7 @@ func (m *KubeDTN) AddLinks(ctx context.Context, query *pb.LinksBatchQuery) (*pb.
 
 func (m *KubeDTN) DelLinks(ctx context.Context, query *pb.LinksBatchQuery) (*pb.BoolResponse, error) {
 	localPod := query.LocalPod
-	logger = logger.WithFields(log.Fields{
+	logger := logger.WithFields(log.Fields{
 		"pod": localPod.Name,
 		"ns":  localPod.KubeNs,
 	})
