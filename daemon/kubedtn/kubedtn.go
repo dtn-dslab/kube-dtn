@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"path/filepath"
+	"sync"
 
 	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
 	grpc_ctxtags "github.com/grpc-ecosystem/go-grpc-middleware/tags"
@@ -39,6 +40,7 @@ type KubeDTN struct {
 	s               *grpc.Server
 	lis             net.Listener
 	topologyManager *metrics.TopologyManager
+	linkMutexes     *sync.Map
 }
 
 var logger *log.Entry = nil
@@ -95,6 +97,7 @@ func New(cfg Config, topologyManager *metrics.TopologyManager) (*KubeDTN, error)
 		lis:             lis,
 		s:               newServerWithLogging(cfg.GRPCOpts...),
 		topologyManager: topologyManager,
+		linkMutexes:     &sync.Map{},
 	}
 	pb.RegisterLocalServer(m.s, m)
 	pb.RegisterRemoteServer(m.s, m)

@@ -24,9 +24,6 @@ const _ = grpc.SupportPackageIsVersion7
 type LocalClient interface {
 	Get(ctx context.Context, in *PodQuery, opts ...grpc.CallOption) (*Pod, error)
 	SetAlive(ctx context.Context, in *Pod, opts ...grpc.CallOption) (*BoolResponse, error)
-	SkipReverse(ctx context.Context, in *SkipQuery, opts ...grpc.CallOption) (*BoolResponse, error)
-	Skip(ctx context.Context, in *SkipQuery, opts ...grpc.CallOption) (*BoolResponse, error)
-	IsSkipped(ctx context.Context, in *SkipQuery, opts ...grpc.CallOption) (*BoolResponse, error)
 	AddLinks(ctx context.Context, in *LinksBatchQuery, opts ...grpc.CallOption) (*BoolResponse, error)
 	DelLinks(ctx context.Context, in *LinksBatchQuery, opts ...grpc.CallOption) (*BoolResponse, error)
 	UpdateLinks(ctx context.Context, in *LinksBatchQuery, opts ...grpc.CallOption) (*BoolResponse, error)
@@ -61,33 +58,6 @@ func (c *localClient) Get(ctx context.Context, in *PodQuery, opts ...grpc.CallOp
 func (c *localClient) SetAlive(ctx context.Context, in *Pod, opts ...grpc.CallOption) (*BoolResponse, error) {
 	out := new(BoolResponse)
 	err := c.cc.Invoke(ctx, "/proto.v1.Local/SetAlive", in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *localClient) SkipReverse(ctx context.Context, in *SkipQuery, opts ...grpc.CallOption) (*BoolResponse, error) {
-	out := new(BoolResponse)
-	err := c.cc.Invoke(ctx, "/proto.v1.Local/SkipReverse", in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *localClient) Skip(ctx context.Context, in *SkipQuery, opts ...grpc.CallOption) (*BoolResponse, error) {
-	out := new(BoolResponse)
-	err := c.cc.Invoke(ctx, "/proto.v1.Local/Skip", in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *localClient) IsSkipped(ctx context.Context, in *SkipQuery, opts ...grpc.CallOption) (*BoolResponse, error) {
-	out := new(BoolResponse)
-	err := c.cc.Invoke(ctx, "/proto.v1.Local/IsSkipped", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -181,9 +151,6 @@ func (c *localClient) GenerateNodeInterfaceName(ctx context.Context, in *Generat
 type LocalServer interface {
 	Get(context.Context, *PodQuery) (*Pod, error)
 	SetAlive(context.Context, *Pod) (*BoolResponse, error)
-	SkipReverse(context.Context, *SkipQuery) (*BoolResponse, error)
-	Skip(context.Context, *SkipQuery) (*BoolResponse, error)
-	IsSkipped(context.Context, *SkipQuery) (*BoolResponse, error)
 	AddLinks(context.Context, *LinksBatchQuery) (*BoolResponse, error)
 	DelLinks(context.Context, *LinksBatchQuery) (*BoolResponse, error)
 	UpdateLinks(context.Context, *LinksBatchQuery) (*BoolResponse, error)
@@ -208,15 +175,6 @@ func (UnimplementedLocalServer) Get(context.Context, *PodQuery) (*Pod, error) {
 }
 func (UnimplementedLocalServer) SetAlive(context.Context, *Pod) (*BoolResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SetAlive not implemented")
-}
-func (UnimplementedLocalServer) SkipReverse(context.Context, *SkipQuery) (*BoolResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method SkipReverse not implemented")
-}
-func (UnimplementedLocalServer) Skip(context.Context, *SkipQuery) (*BoolResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Skip not implemented")
-}
-func (UnimplementedLocalServer) IsSkipped(context.Context, *SkipQuery) (*BoolResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method IsSkipped not implemented")
 }
 func (UnimplementedLocalServer) AddLinks(context.Context, *LinksBatchQuery) (*BoolResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method AddLinks not implemented")
@@ -290,60 +248,6 @@ func _Local_SetAlive_Handler(srv interface{}, ctx context.Context, dec func(inte
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(LocalServer).SetAlive(ctx, req.(*Pod))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _Local_SkipReverse_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(SkipQuery)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(LocalServer).SkipReverse(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/proto.v1.Local/SkipReverse",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(LocalServer).SkipReverse(ctx, req.(*SkipQuery))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _Local_Skip_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(SkipQuery)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(LocalServer).Skip(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/proto.v1.Local/Skip",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(LocalServer).Skip(ctx, req.(*SkipQuery))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _Local_IsSkipped_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(SkipQuery)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(LocalServer).IsSkipped(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/proto.v1.Local/IsSkipped",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(LocalServer).IsSkipped(ctx, req.(*SkipQuery))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -524,18 +428,6 @@ var Local_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SetAlive",
 			Handler:    _Local_SetAlive_Handler,
-		},
-		{
-			MethodName: "SkipReverse",
-			Handler:    _Local_SkipReverse_Handler,
-		},
-		{
-			MethodName: "Skip",
-			Handler:    _Local_Skip_Handler,
-		},
-		{
-			MethodName: "IsSkipped",
-			Handler:    _Local_IsSkipped_Handler,
 		},
 		{
 			MethodName: "AddLinks",

@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"strings"
+	"sync"
 
 	v1 "github.com/y-young/kube-dtn/api/v1"
 	"github.com/y-young/kube-dtn/daemon/grpcwire"
@@ -107,134 +108,6 @@ func (m *KubeDTN) SetAlive(ctx context.Context, pod *pb.Pod) (*pb.BoolResponse, 
 	}
 
 	return &pb.BoolResponse{Response: true}, nil
-}
-
-func (m *KubeDTN) Skip(ctx context.Context, skip *pb.SkipQuery) (*pb.BoolResponse, error) {
-	logger = logger.WithFields(log.Fields{
-		"pod": skip.Pod,
-		"ns":  skip.KubeNs,
-	})
-
-	logger.Infof("Skipping peer pod %s", skip.Peer)
-
-	retryErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		topology, err := m.getPod(ctx, skip.Pod, skip.KubeNs)
-		if err != nil {
-			logger.Errorf("Failed to read pod from K8s")
-			return err
-		}
-
-		skipped := topology.Status.Skipped
-		newSkipped := append(skipped, skip.Peer)
-		topology.Status.Skipped = newSkipped
-
-		return m.updateStatus(ctx, topology, skip.KubeNs)
-	})
-	if retryErr != nil {
-		logger.WithFields(log.Fields{
-			"err":      retryErr,
-			"function": "Skip",
-		}).Errorf("Failed to update skip pod status")
-		return &pb.BoolResponse{Response: false}, retryErr
-	}
-
-	return &pb.BoolResponse{Response: true}, nil
-}
-
-func (m *KubeDTN) SkipReverse(ctx context.Context, skip *pb.SkipQuery) (*pb.BoolResponse, error) {
-	logger = logger.WithFields(log.Fields{
-		"pod": skip.Pod,
-		"ns":  skip.KubeNs,
-	})
-
-	logger.Infof("Reverse-skipping peer pod %s", skip.Peer)
-
-	var podName string
-	retryErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		// setting the value for peer pod
-		peerPod, err := m.getPod(ctx, skip.Peer, skip.KubeNs)
-		if err != nil {
-			logger.Errorf("Failed to read pod from K8s")
-			return err
-		}
-		podName = peerPod.GetName()
-
-		// extracting peer pod's skipped list and adding this pod's name to it
-		peerSkipped := peerPod.Status.Skipped
-		newPeerSkipped := append(peerSkipped, skip.Pod)
-
-		logger.Infof("Updating peer skipped list")
-		// updating peer pod's skipped list locally
-		peerPod.Status.Skipped = newPeerSkipped
-
-		// sending peer pod's updates to k8s
-		return m.updateStatus(ctx, peerPod, skip.KubeNs)
-	})
-	if retryErr != nil {
-		logger.WithFields(log.Fields{
-			"err":      retryErr,
-			"function": "SkipReverse",
-		}).Errorf("Failed to update peer pod %s skipreverse status", podName)
-		return &pb.BoolResponse{Response: false}, retryErr
-	}
-
-	retryErr = retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		// setting the value for this pod
-		thisPod, err := m.getPod(ctx, skip.Pod, skip.KubeNs)
-		if err != nil {
-			logger.Errorf("Failed to read pod from K8s")
-			return err
-		}
-
-		// extracting this pod's skipped list and removing peer pod's name from it
-		thisSkipped := thisPod.Status.Skipped
-		newThisSkipped := make([]string, 0)
-
-		logger.WithFields(log.Fields{
-			"thisSkipped": thisSkipped,
-		}).Info("THIS SKIPPED:")
-
-		for _, el := range thisSkipped {
-			if el != skip.Peer {
-				logger.Infof("Appending new element %s", el)
-				newThisSkipped = append(newThisSkipped, el)
-			}
-		}
-
-		logger.WithFields(log.Fields{
-			"newThisSkipped": newThisSkipped,
-		}).Info("NEW THIS SKIPPED:")
-
-		// updating this pod's skipped list locally
-		if len(newThisSkipped) != 0 {
-			thisPod.Status.Skipped = newThisSkipped
-			// sending this pod's updates to k8s
-			return m.updateStatus(ctx, thisPod, skip.KubeNs)
-		}
-		return nil
-	})
-	if retryErr != nil {
-		logger.WithFields(log.Fields{
-			"err":      retryErr,
-			"function": "SkipReverse",
-		}).Error("Failed to update this pod skipreverse status")
-		return &pb.BoolResponse{Response: false}, retryErr
-	}
-
-	return &pb.BoolResponse{Response: true}, nil
-}
-
-func (m *KubeDTN) IsSkipped(ctx context.Context, skip *pb.SkipQuery) (*pb.BoolResponse, error) {
-	logger.Infof("Checking if %s is skipped by %s", skip.Peer, skip.Pod)
-
-	topology, err := m.getPod(ctx, skip.Peer, skip.KubeNs)
-	if err != nil {
-		logger.Errorf("Failed to read pod %s from K8s", skip.Pod)
-		return nil, err
-	}
-
-	skipped := common.IsSkipped(skip.Pod, topology)
-	return &pb.BoolResponse{Response: skipped}, nil
 }
 
 func (m *KubeDTN) Update(ctx context.Context, pod *pb.RemotePod) (*pb.BoolResponse, error) {
@@ -449,114 +322,66 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 	isAlive := peerPod.SrcIp != "" && peerPod.NetNs != ""
 	logger.Infof("Is peer pod %s alive?: %t", peerPod.Name, isAlive)
 
-	if isAlive { // This means we're coming up AFTER our peer so things are pretty easy
-		logger.Infof("Peer pod %s is alive", peerPod.Name)
-		if peerPod.SrcIp == localPod.SrcIp { // This means we're on the same host
-			logger.Infof("%s and %s are on the same host", localPod.Name, peerPod.Name)
-			// Creating koko's Veth struct for peer intf
-			peerVeth, err := common.MakeVeth(peerPod.NetNs, link.PeerIntf, link.PeerIp, link.PeerMac)
-			if err != nil {
-				logger.Infof("Failed to build koko Veth struct")
-				return err
-			}
-
-			// Checking if interfaces already exist
-			iExist, _ := koko.IsExistLinkInNS(myVeth.NsName, myVeth.LinkName)
-			pExist, _ := koko.IsExistLinkInNS(peerVeth.NsName, peerVeth.LinkName)
-
-			logger.Infof("Does the link already exist? Local: %t, Peer: %t", iExist, pExist)
-			if iExist && pExist { // If both link exist, we don't need to do anything
-				logger.Info("Both interfaces already exist in namespace")
-			} else if !iExist && pExist { // If only peer link exists, we need to destroy it first
-				logger.Info("Only peer link exists, removing it first")
-				if err := peerVeth.RemoveVethLink(); err != nil {
-					logger.Infof("Failed to remove a stale interface %s of my peer %s", peerVeth.LinkName, link.PeerPod)
-					return err
-				}
-				logger.Infof("Adding the new veth link to both pods")
-				if err = common.SetupVeth(myVeth, peerVeth, link.Properties); err != nil {
-					logger.Infof("Error creating VEth pair after peer link remove: %s", err)
-					return err
-				}
-			} else if iExist && !pExist { // If only local link exists, we need to destroy it first
-				logger.Infof("Only local link exists, removing it first")
-				if err := myVeth.RemoveVethLink(); err != nil {
-					logger.Infof("Failed to remove a local stale VEth interface %s for pod %s", myVeth.LinkName, localPod.Name)
-					return err
-				}
-				logger.Infof("Adding the new veth link to both pods")
-				if err = common.SetupVeth(myVeth, peerVeth, link.Properties); err != nil {
-					logger.Infof("Error creating VEth pair after local link remove: %s", err)
-					return err
-				}
-			} else { // if neither link exists, we have two options
-				logger.Infof("Neither link exists. Checking if we've been skipped")
-				isSkipped := common.IsSkipped(localPod.Name, peerTopology)
-				logger.Infof("Have we been skipped by our peer %s? %t", peerPod.Name, isSkipped)
-
-				// Comparing names to determine higher priority
-				higherPrio := localPod.Name > peerPod.Name
-				logger.Infof("DO we have a higher priority? %t", higherPrio)
-
-				if isSkipped || higherPrio { // If peer POD skipped us (booted before us) or we have a higher priority
-					logger.Infof("Peer POD has skipped us or we have a higher priority")
-					if err = common.SetupVeth(myVeth, peerVeth, link.Properties); err != nil {
-						logger.Infof("Error when creating a new VEth pair with koko: %s", err)
-						logger.Infof("MY VETH STRUCT: %+v", spew.Sdump(myVeth))
-						logger.Infof("PEER STRUCT: %+v", spew.Sdump(peerVeth))
-						return err
-					}
-				} else { // peerPod has higherPrio and hasn't skipped us
-					// In this case we do nothing, since the pod with a higher IP is supposed to connect veth pair
-					logger.Infof("Doing nothing, expecting peer pod %s to connect veth pair", peerPod.Name)
-					return nil
-				}
-			}
-		} else { // This means we're on different hosts
-			logger.Infof("%s@%s and %s@%s are on different hosts", localPod.Name, localPod.SrcIp, peerPod.Name, peerPod.SrcIp)
-			if interNodeLinkType == common.INTER_NODE_LINK_GRPC {
-				err = common.CreateGRPCChan(link, localPod, peerPod, m, ctx)
-				if err != nil {
-					logger.Infof("!! Failed to create grpc wire. err: %v", err)
-					return err
-				}
-				return nil
-			}
-
-			vxlanSpec := &vxlan.VxlanSpec{
-				NetNs:    localPod.NetNs,
-				IntfName: link.LocalIntf,
-				IntfIp:   link.LocalIp,
-				PeerVtep: peerPod.SrcIp,
-				Vni:      common.GetVniFromUid(link.Uid),
-				SrcIp:    nodeIP,
-			}
-			if err = common.SetupVxLan(vxlanSpec, link.Properties); err != nil {
-				logger.Infof("Error when setting up VXLAN interface with koko: %s", err)
-				return err
-			}
-
-			// Now we need to make an API call to update the remote VTEP to point to us
-			err = common.UpdateRemote(ctx, localPod, peerPod, link)
-			if err != nil {
-				return err
-			}
-			logger.Infof("Successfully updated remote KubeDTN daemon")
-		}
-	} else { // This means that our peer pod hasn't come up yet
+	if !isAlive {
+		// This means that our peer pod hasn't come up yet
 		// Since there's no way of telling if our peer is going to be on this host or another,
 		// the only option is to do nothing, assuming that the peer POD will do all the plumbing when it comes up
 		logger.Infof("Peer pod %s isn't alive yet, continuing", peerPod.Name)
-		// Here we need to set the skipped flag so that our peer can configure VEth interface when it comes up later
-		ok, err := m.Skip(ctx, &pb.SkipQuery{
-			Pod:    localPod.Name,
-			Peer:   peerPod.Name,
-			KubeNs: localPod.KubeNs,
-		})
-		if err != nil || !ok.Response {
-			logger.Infof("Failed to set a skipped flag on peer %s", peerPod.Name)
+		return nil
+	}
+
+	// This means we're coming up AFTER our peer so things are pretty easy
+	logger.Infof("Peer pod %s is alive", peerPod.Name)
+	if peerPod.SrcIp == localPod.SrcIp { // This means we're on the same host
+		logger.Infof("%s and %s are on the same host", localPod.Name, peerPod.Name)
+		// Creating koko's Veth struct for peer intf
+		peerVeth, err := common.MakeVeth(peerPod.NetNs, link.PeerIntf, link.PeerIp, link.PeerMac)
+		if err != nil {
+			logger.Infof("Failed to build koko Veth struct")
 			return err
 		}
+
+		value, _ := m.linkMutexes.LoadOrStore(link.Uid, &sync.Mutex{})
+		mutex := value.(*sync.Mutex)
+		mutex.Lock()
+		// defer m.linkMutexes.Delete(link.Uid)
+		defer mutex.Unlock()
+		err = common.SetupVeth(logger, myVeth, peerVeth, link, localPod, peerTopology)
+		if err != nil {
+			logger.Infof("Error when creating a new VEth pair with koko: %s", err)
+			logger.Infof("SELF VETH STRUCT: %+v", spew.Sdump(myVeth))
+			logger.Infof("PEER VETH STRUCT: %+v", spew.Sdump(peerVeth))
+		}
+	} else { // This means we're on different hosts
+		logger.Infof("%s@%s and %s@%s are on different hosts", localPod.Name, localPod.SrcIp, peerPod.Name, peerPod.SrcIp)
+		if interNodeLinkType == common.INTER_NODE_LINK_GRPC {
+			err = common.CreateGRPCChan(link, localPod, peerPod, m, ctx)
+			if err != nil {
+				logger.Infof("!! Failed to create grpc wire. err: %v", err)
+				return err
+			}
+			return nil
+		}
+
+		vxlanSpec := &vxlan.VxlanSpec{
+			NetNs:    localPod.NetNs,
+			IntfName: link.LocalIntf,
+			IntfIp:   link.LocalIp,
+			PeerVtep: peerPod.SrcIp,
+			Vni:      common.GetVniFromUid(link.Uid),
+			SrcIp:    nodeIP,
+		}
+		if err = common.SetupVxLan(vxlanSpec, link.Properties); err != nil {
+			logger.Infof("Error when setting up VXLAN interface with koko: %s", err)
+			return err
+		}
+
+		// Now we need to make an API call to update the remote VTEP to point to us
+		err = common.UpdateRemote(ctx, localPod, peerPod, link)
+		if err != nil {
+			return err
+		}
+		logger.Infof("Successfully updated remote daemon")
 	}
 	return nil
 }
@@ -576,23 +401,10 @@ func (m *KubeDTN) delLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 		return err
 	}
 
-	logger.Infof("Removing link %s", link.LocalIntf)
 	// API call to koko to remove local Veth link
 	if err = myVeth.RemoveVethLink(); err != nil {
 		// instead of failing, just log the error and move on
 		logger.Infof("Error removing Veth link: %s", err)
-	}
-
-	// Setting reversed skipped flag so that this pod will try to connect veth pair on restart
-	logger.Infof("Setting skip-reverse flag on peer %s", link.PeerPod)
-	ok, err := m.SkipReverse(ctx, &pb.SkipQuery{
-		Pod:    localPod.Name,
-		Peer:   link.PeerPod,
-		KubeNs: localPod.KubeNs,
-	})
-	if err != nil || !ok.Response {
-		logger.Infof("Failed to set skip reversed flag on our peer %s", link.PeerPod)
-		return err
 	}
 
 	return nil
