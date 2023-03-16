@@ -3,6 +3,7 @@ package common
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	koko "github.com/redhat-nfvpe/koko/api"
 	log "github.com/sirupsen/logrus"
@@ -20,9 +21,21 @@ func Map[T, U any](ts []T, f func(T) U) []U {
 	return us
 }
 
+type MutexMap sync.Map
+
+func (m *MutexMap) Get(key any) *sync.Mutex {
+	mutex, _ := (*sync.Map)(m).LoadOrStore(key, &sync.Mutex{})
+	return mutex.(*sync.Mutex)
+}
+
 // Generate VXLAN Vni from link UID
 func GetVniFromUid(uid int64) int32 {
 	return int32(VxlanBase + uid)
+}
+
+// Get link UID from VXLAN Vni
+func GetUidFromVni(vni int32) int64 {
+	return int64(vni - VxlanBase)
 }
 
 // Call remote daemon to set up link on their side

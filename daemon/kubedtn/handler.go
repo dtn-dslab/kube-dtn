@@ -6,7 +6,6 @@ import (
 	"net"
 	"os"
 	"strings"
-	"sync"
 
 	v1 "github.com/y-young/kube-dtn/api/v1"
 	"github.com/y-young/kube-dtn/daemon/grpcwire"
@@ -125,6 +124,11 @@ func (m *KubeDTN) Update(ctx context.Context, pod *pb.RemotePod) (*pb.BoolRespon
 		PeerVtep: pod.PeerVtep,
 		Vni:      pod.Vni,
 	}
+
+	mutex := m.linkMutexes.Get(common.GetUidFromVni(pod.Vni))
+	mutex.Lock()
+	defer mutex.Unlock()
+
 	err = common.SetupVxLan(vxlanSpec, pod.Properties)
 	if err != nil {
 		logger.Errorf("Failed to handle remote update: %v", err)
@@ -341,11 +345,10 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 			return err
 		}
 
-		value, _ := m.linkMutexes.LoadOrStore(link.Uid, &sync.Mutex{})
-		mutex := value.(*sync.Mutex)
+		mutex := m.linkMutexes.Get(link.Uid)
 		mutex.Lock()
-		// defer m.linkMutexes.Delete(link.Uid)
 		defer mutex.Unlock()
+
 		err = common.SetupVeth(logger, myVeth, peerVeth, link, localPod, peerTopology)
 		if err != nil {
 			logger.Errorf("Error when creating a new VEth pair with koko: %s", err)
@@ -372,6 +375,11 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 			Vni:      common.GetVniFromUid(link.Uid),
 			SrcIp:    nodeIP,
 		}
+
+		mutex := m.linkMutexes.Get(link.Uid)
+		mutex.Lock()
+		defer mutex.Unlock()
+
 		if err = common.SetupVxLan(vxlanSpec, link.Properties); err != nil {
 			logger.Infof("Error when setting up VXLAN interface with koko: %s", err)
 			return err
