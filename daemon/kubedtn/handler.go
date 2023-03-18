@@ -22,8 +22,7 @@ import (
 	pb "github.com/y-young/kube-dtn/proto/v1"
 )
 
-// TODO: Call SetInterNodeLinkType
-var interNodeLinkType = common.INTER_NODE_LINK_VXLAN
+// var interNodeLinkType = common.INTER_NODE_LINK_VXLAN
 
 func (m *KubeDTN) getPod(ctx context.Context, name, ns string) (*v1.Topology, error) {
 	logger.Infof("Reading pod %s from K8s", name)
@@ -129,11 +128,24 @@ func (m *KubeDTN) Update(ctx context.Context, pod *pb.RemotePod) (*pb.BoolRespon
 	mutex.Lock()
 	defer mutex.Unlock()
 
+	// Check if there's a vxlan link with the same VNI but in different namespace
+	netns := m.vxlanManager.Get(pod.Vni)
+	// Ensure link is in different namespace since we might have set it up locally
+	if netns != nil && *netns != pod.NetNs {
+		logger.Infof("VXLAN with the same VNI already exists, removing it")
+		err = vxlan.RemoveLinkWithVni(pod.Vni, *netns)
+		if err != nil {
+			logger.Errorf("Failed to remove existing VXLAN link: %v", err)
+		}
+	}
+
 	err = common.SetupVxLan(vxlanSpec, pod.Properties)
 	if err != nil {
 		logger.Errorf("Failed to handle remote update: %v", err)
 		return &pb.BoolResponse{Response: false}, err
 	}
+	m.vxlanManager.Add(pod.Vni, &pod.NetNs)
+
 	return &pb.BoolResponse{Response: true}, nil
 }
 
@@ -376,6 +388,7 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 			logger.Infof("Error when setting up VXLAN interface with koko: %s", err)
 			return err
 		}
+		m.vxlanManager.Add(vxlanSpec.Vni, &vxlanSpec.NetNs)
 
 		// Now we need to make an API call to update the remote VTEP to point to us
 		err = common.UpdateRemote(ctx, localPod, peerPod, link)
@@ -405,7 +418,13 @@ func (m *KubeDTN) delLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 	// API call to koko to remove local Veth link
 	if err = myVeth.RemoveVethLink(); err != nil {
 		// instead of failing, just log the error and move on
-		logger.Infof("Error removing Veth link: %s", err)
+		logger.Infof("Failed to remove veth link: %s", err)
+	}
+
+	vni := common.GetVniFromUid(link.Uid)
+	netns := m.vxlanManager.Get(vni)
+	if netns != nil && *netns == localPod.NetNs {
+		m.vxlanManager.Delete(vni)
 	}
 
 	return nil

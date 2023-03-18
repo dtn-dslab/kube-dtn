@@ -1,8 +1,10 @@
 package kubedtn
 
 import (
+	"context"
 	"fmt"
 	"net"
+	"os"
 	"path/filepath"
 
 	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
@@ -18,8 +20,11 @@ import (
 	"k8s.io/client-go/util/homedir"
 
 	topologyclientv1 "github.com/y-young/kube-dtn/api/clientset/v1beta1"
+	v1 "github.com/y-young/kube-dtn/api/v1"
 	"github.com/y-young/kube-dtn/common"
 	"github.com/y-young/kube-dtn/daemon/metrics"
+	"github.com/y-young/kube-dtn/daemon/vxlan"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	pb "github.com/y-young/kube-dtn/proto/v1"
 )
@@ -40,6 +45,7 @@ type KubeDTN struct {
 	s               *grpc.Server
 	lis             net.Listener
 	topologyManager *metrics.TopologyManager
+	vxlanManager    *vxlan.VxlanManager
 	linkMutexes     *common.MutexMap
 }
 
@@ -84,10 +90,21 @@ func New(cfg Config, topologyManager *metrics.TopologyManager) (*KubeDTN, error)
 		return nil, err
 	}
 
-	err = topologyManager.Init(tClient.Topology(""))
+	ctx := context.Background()
+	topologies, err := tClient.Topology("").List(ctx, metav1.ListOptions{})
+	logger.Infof("Found %d local topologies", len(topologies.Items))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to list topologies: %v", err)
 	}
+	localTopologies := filterLocalTopologies(topologies)
+
+	err = topologyManager.Init(localTopologies)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize topology manager: %v", err)
+	}
+
+	vxlanManager := vxlan.NewVxlanManager()
+	vxlanManager.Init(localTopologies)
 
 	m := &KubeDTN{
 		config:          cfg,
@@ -97,6 +114,7 @@ func New(cfg Config, topologyManager *metrics.TopologyManager) (*KubeDTN, error)
 		lis:             lis,
 		s:               newServerWithLogging(cfg.GRPCOpts...),
 		topologyManager: topologyManager,
+		vxlanManager:    vxlanManager,
 		linkMutexes:     &common.MutexMap{},
 	}
 	pb.RegisterLocalServer(m.s, m)
@@ -129,4 +147,16 @@ func newServerWithLogging(opts ...grpc.ServerOption) *grpc.Server {
 			glogrus.StreamServerInterceptor(lEntry, lOpts...),
 		))
 	return grpc.NewServer(opts...)
+}
+
+func filterLocalTopologies(topologies *v1.TopologyList) *v1.TopologyList {
+	nodeIP := os.Getenv("HOST_IP")
+	filtered := &v1.TopologyList{}
+	for _, topology := range topologies.Items {
+		topology := topology
+		if topology.Status.SrcIP == nodeIP {
+			filtered.Items = append(filtered.Items, topology)
+		}
+	}
+	return filtered
 }

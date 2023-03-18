@@ -109,7 +109,7 @@ func CreateOrUpdate(v *VxlanSpec) (*api.VEth, error) {
 			// Conflicting interface name or VNI will incur this error,
 			// since we've removed the old interface previously,
 			// it's likely that another link with the same VNI already exists, remove it and try again.
-			if e := RemoveLinkWithVni(vxlan.ID, veth.NsName); e != nil {
+			if e := RemoveLinkWithVni(v.Vni, veth.NsName); e != nil {
 				vxlanLogger.Errorf("Failed to remove conflicting link with VNI %d: %s", vxlan.ID, err)
 				return nil, err
 			}
@@ -203,7 +203,7 @@ func vxlanEqual(l1 *netlink.Vxlan, l2 api.VxLan) bool {
 }
 
 // RemoveLinkWithVni removes a vxlan link with the given VNI
-func RemoveLinkWithVni(vni int, netns string) error {
+func RemoveLinkWithVni(vni int32, netns string) error {
 	vethNs, err := ns.GetNS(netns)
 	if err != nil {
 		return err
@@ -221,7 +221,7 @@ func RemoveLinkWithVni(vni int, netns string) error {
 			if !isVxlan {
 				continue
 			}
-			if vxlanLink.VxlanId == vni {
+			if int32(vxlanLink.VxlanId) == vni {
 				if err = netlink.LinkDel(vxlanLink); err != nil {
 					return fmt.Errorf("error deleting vxlan link: %s", err)
 				}

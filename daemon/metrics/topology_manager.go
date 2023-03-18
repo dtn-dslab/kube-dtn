@@ -1,12 +1,7 @@
 package metrics
 
 import (
-	"context"
-	"os"
-
-	"github.com/y-young/kube-dtn/api/clientset/v1beta1"
 	v1 "github.com/y-young/kube-dtn/api/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 type TopologyManager struct {
@@ -19,21 +14,13 @@ func NewTopologyManager() *TopologyManager {
 	}
 }
 
-func (m *TopologyManager) Init(client v1beta1.TopologyInterface) error {
-	ctx := context.Background()
-	topologies, err := client.List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return err
-	}
-	nodeIP := os.Getenv("HOST_IP")
+func (m *TopologyManager) Init(topologies *v1.TopologyList) error {
 	for _, topology := range topologies.Items {
 		// https://medium.com/swlh/use-pointer-of-for-range-loop-variable-in-go-3d3481f7ffc9
 		// Iteration variables are re-used each iteration,
 		// through shadowing we create a new local variable for each iteration.
 		topology := topology
-		if topology.Status.SrcIP == nodeIP {
-			m.topologies[topology.Name] = &topology
-		}
+		m.topologies[topology.Name] = &topology
 	}
 	return nil
 }
