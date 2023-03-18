@@ -49,7 +49,7 @@ func TestVxlan(t *testing.T) {
 		},
 	}
 	for i, tt := range tests {
-		result := vxlanDifferent(tt.found, tt.expected)
+		result := vxlanEqual(tt.found, tt.expected)
 		if result != tt.same {
 			t.Errorf("#%d test failed", i)
 		}
