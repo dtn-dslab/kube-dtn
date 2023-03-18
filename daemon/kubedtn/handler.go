@@ -358,14 +358,6 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 		}
 	} else { // This means we're on different hosts
 		logger.Infof("%s@%s and %s@%s are on different hosts", localPod.Name, localPod.SrcIp, peerPod.Name, peerPod.SrcIp)
-		if interNodeLinkType == common.INTER_NODE_LINK_GRPC {
-			err = common.CreateGRPCChan(link, localPod, peerPod, m, ctx)
-			if err != nil {
-				logger.Infof("!! Failed to create grpc wire. err: %v", err)
-				return err
-			}
-			return nil
-		}
 
 		vxlanSpec := &vxlan.VxlanSpec{
 			NetNs:    localPod.NetNs,
