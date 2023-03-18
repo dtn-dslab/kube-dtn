@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"os"
 	"strings"
@@ -91,7 +92,8 @@ func addLink(link *pb.Link, srcIntf string, peerIP string) error {
 		PeerVtep: peerIP,
 		Vni:      common.GetVniFromUid(link.Uid),
 	}
-	if err := common.SetupVxLan(vxlanSpec, link.Properties); err != nil {
+	ctx := context.WithValue(context.Background(), common.CtxKey("logger"), log.New())
+	if err := vxlan.SetupVxLan(ctx, vxlanSpec, link.Properties); err != nil {
 		log.Infof("Error when creating a Vxlan interface with koko: %s", err)
 		return err
 	}

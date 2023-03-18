@@ -25,17 +25,20 @@ import (
 // var interNodeLinkType = common.INTER_NODE_LINK_VXLAN
 
 func (m *KubeDTN) getPod(ctx context.Context, name, ns string) (*v1.Topology, error) {
+	logger := common.GetLogger(ctx)
 	logger.Infof("Reading pod %s from K8s", name)
 	return m.tClient.Topology(ns).Get(ctx, name, metav1.GetOptions{})
 }
 
 func (m *KubeDTN) updateStatus(ctx context.Context, topology *v1.Topology, ns string) error {
+	logger := common.GetLogger(ctx)
 	logger.Infof("Update pod status %s from K8s", topology.Name)
 	_, err := m.tClient.Topology(ns).Update(ctx, topology, metav1.UpdateOptions{})
 	return err
 }
 
 func (m *KubeDTN) Get(ctx context.Context, pod *pb.PodQuery) (*pb.Pod, error) {
+	logger := common.GetLogger(ctx)
 	logger.Infof("Retrieving %s's metadata from K8s...", pod.Name)
 
 	topology, err := m.getPod(ctx, pod.Name, pod.KubeNs)
@@ -44,10 +47,12 @@ func (m *KubeDTN) Get(ctx context.Context, pod *pb.PodQuery) (*pb.Pod, error) {
 		return nil, err
 	}
 
-	return m.ToProtoPod(topology)
+	return m.ToProtoPod(ctx, topology)
 }
 
-func (m *KubeDTN) ToProtoPod(topology *v1.Topology) (*pb.Pod, error) {
+func (m *KubeDTN) ToProtoPod(ctx context.Context, topology *v1.Topology) (*pb.Pod, error) {
+	logger := common.GetLogger(ctx)
+
 	remoteLinks := topology.Spec.Links
 	if remoteLinks == nil {
 		logger.Errorf("Could not find 'Link' array in pod's spec")
@@ -76,10 +81,11 @@ func (m *KubeDTN) ToProtoPod(topology *v1.Topology) (*pb.Pod, error) {
 }
 
 func (m *KubeDTN) SetAlive(ctx context.Context, pod *pb.Pod) (*pb.BoolResponse, error) {
-	logger := logger.WithFields(log.Fields{
+	logger := common.GetLogger(ctx).WithFields(log.Fields{
 		"pod": pod.Name,
 		"ns":  pod.KubeNs,
 	})
+	ctx = common.WithLogger(ctx, logger)
 
 	logger.Infof("Setting SrcIp=%s and NetNs=%s", pod.SrcIp, pod.NetNs)
 
@@ -109,10 +115,12 @@ func (m *KubeDTN) SetAlive(ctx context.Context, pod *pb.Pod) (*pb.BoolResponse, 
 }
 
 func (m *KubeDTN) Update(ctx context.Context, pod *pb.RemotePod) (*pb.BoolResponse, error) {
-	logger := logger.WithFields(log.Fields{
-		"pod": pod.Name,
-		"ns":  pod.KubeNs,
+	logger := common.GetLogger(ctx).WithFields(log.Fields{
+		"pod":    pod.Name,
+		"ns":     pod.KubeNs,
+		"action": "remoteUpdate",
 	})
+	ctx = common.WithLogger(ctx, logger)
 	logger.Infof("Updating pod from remote")
 
 	var err error
@@ -133,13 +141,13 @@ func (m *KubeDTN) Update(ctx context.Context, pod *pb.RemotePod) (*pb.BoolRespon
 	// Ensure link is in different namespace since we might have set it up locally
 	if netns != nil && *netns != pod.NetNs {
 		logger.Infof("VXLAN with the same VNI already exists, removing it")
-		err = vxlan.RemoveLinkWithVni(pod.Vni, *netns)
+		err = vxlan.RemoveLinkWithVni(ctx, pod.Vni, *netns)
 		if err != nil {
 			logger.Errorf("Failed to remove existing VXLAN link: %v", err)
 		}
 	}
 
-	err = common.SetupVxLan(vxlanSpec, pod.Properties)
+	err = vxlan.SetupVxLan(ctx, vxlanSpec, pod.Properties)
 	if err != nil {
 		logger.Errorf("Failed to handle remote update: %v", err)
 		return &pb.BoolResponse{Response: false}, err
@@ -266,17 +274,16 @@ func (m *KubeDTN) GenerateNodeInterfaceName(ctx context.Context, in *pb.Generate
 }
 
 func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) error {
-	logger := logger.WithFields(log.Fields{
-		"pod":  localPod.Name,
-		"ns":   localPod.KubeNs,
+	logger := common.GetLogger(ctx).WithFields(log.Fields{
 		"link": link.Uid,
 	})
+	ctx = common.WithLogger(ctx, logger)
 	logger.Infof("Adding link: %v", link)
 
 	nodeIP := os.Getenv("HOST_IP")
 
 	// Build koko's veth struct for local intf
-	myVeth, err := common.MakeVeth(localPod.NetNs, link.LocalIntf, link.LocalIp, link.LocalMac)
+	myVeth, err := common.MakeVeth(ctx, localPod.NetNs, link.LocalIntf, link.LocalIp, link.LocalMac)
 	if err != nil {
 		return err
 	}
@@ -329,7 +336,7 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 		logger.Errorf("Failed to retrieve peer pod %s/%s topology", localPod.KubeNs, link.PeerPod)
 		return err
 	}
-	peerPod, err := m.ToProtoPod(peerTopology)
+	peerPod, err := m.ToProtoPod(ctx, peerTopology)
 	if err != nil {
 		logger.Errorf("Failed to convert peer topology %s/%s to proto pod", localPod.KubeNs, link.PeerPod)
 		return err
@@ -351,7 +358,7 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 	if peerPod.SrcIp == localPod.SrcIp { // This means we're on the same host
 		logger.Infof("%s and %s are on the same host", localPod.Name, peerPod.Name)
 		// Creating koko's Veth struct for peer intf
-		peerVeth, err := common.MakeVeth(peerPod.NetNs, link.PeerIntf, link.PeerIp, link.PeerMac)
+		peerVeth, err := common.MakeVeth(ctx, peerPod.NetNs, link.PeerIntf, link.PeerIp, link.PeerMac)
 		if err != nil {
 			logger.Errorf("Failed to build koko Veth struct")
 			return err
@@ -361,7 +368,7 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 		mutex.Lock()
 		defer mutex.Unlock()
 
-		err = common.SetupVeth(logger, myVeth, peerVeth, link, localPod, peerTopology)
+		err = common.SetupVeth(ctx, myVeth, peerVeth, link, localPod)
 		if err != nil {
 			logger.Errorf("Error when creating a new VEth pair with koko: %s", err)
 			logger.Infof("SELF VETH STRUCT: %+v", spew.Sdump(myVeth))
@@ -384,7 +391,7 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 		mutex.Lock()
 		defer mutex.Unlock()
 
-		if err = common.SetupVxLan(vxlanSpec, link.Properties); err != nil {
+		if err = vxlan.SetupVxLan(ctx, vxlanSpec, link.Properties); err != nil {
 			logger.Infof("Error when setting up VXLAN interface with koko: %s", err)
 			return err
 		}
@@ -401,15 +408,14 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 }
 
 func (m *KubeDTN) delLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) error {
-	logger := logger.WithFields(log.Fields{
-		"pod":  localPod.Name,
-		"ns":   localPod.KubeNs,
+	logger := common.GetLogger(ctx).WithFields(log.Fields{
 		"link": link.Uid,
 	})
+	ctx = common.WithLogger(ctx, logger)
 	logger.Infof("Deleting link: %v", link)
 
 	// Creating koko's Veth struct for local intf
-	myVeth, err := common.MakeVeth(localPod.NetNs, link.LocalIntf, link.LocalIp, link.LocalMac)
+	myVeth, err := common.MakeVeth(ctx, localPod.NetNs, link.LocalIntf, link.LocalIp, link.LocalMac)
 	if err != nil {
 		logger.Infof("Failed to construct koko Veth struct")
 		return err
@@ -432,10 +438,12 @@ func (m *KubeDTN) delLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 
 // Setup a pod, adding all its VXLAN VTEPs and links
 func (m *KubeDTN) SetupPod(ctx context.Context, pod *pb.SetupPodQuery) (*pb.BoolResponse, error) {
-	logger := logger.WithFields(log.Fields{
-		"pod": pod.Name,
-		"ns":  pod.KubeNs,
+	logger := common.GetLogger(ctx).WithFields(log.Fields{
+		"pod":    pod.Name,
+		"ns":     pod.KubeNs,
+		"action": "setup",
 	})
+	ctx = common.WithLogger(ctx, logger)
 	logger.Infof("Setting up pod")
 
 	localPod, err := m.Get(ctx, &pb.PodQuery{
@@ -480,10 +488,12 @@ func (m *KubeDTN) SetupPod(ctx context.Context, pod *pb.SetupPodQuery) (*pb.Bool
 
 // Destroy a pod, removing all its GRPC wires and links, the reverse process of SetupPod
 func (m *KubeDTN) DestroyPod(ctx context.Context, pod *pb.PodQuery) (*pb.BoolResponse, error) {
-	logger := logger.WithFields(log.Fields{
-		"pod": pod.Name,
-		"ns":  pod.KubeNs,
+	logger := common.GetLogger(ctx).WithFields(log.Fields{
+		"pod":    pod.Name,
+		"ns":     pod.KubeNs,
+		"action": "destroy",
 	})
+	ctx = common.WithLogger(ctx, logger)
 	logger.Infof("Destroying pod")
 
 	// Close the grpc tunnel for this pod netns (if any)
@@ -533,10 +543,13 @@ func (m *KubeDTN) DestroyPod(ctx context.Context, pod *pb.PodQuery) (*pb.BoolRes
 
 func (m *KubeDTN) AddLinks(ctx context.Context, query *pb.LinksBatchQuery) (*pb.BoolResponse, error) {
 	localPod := query.LocalPod
-	logger := logger.WithFields(log.Fields{
-		"pod": localPod.Name,
-		"ns":  localPod.KubeNs,
+	logger := common.GetLogger(ctx).WithFields(log.Fields{
+		"pod":    localPod.Name,
+		"ns":     localPod.KubeNs,
+		"action": "add",
 	})
+	ctx = common.WithLogger(ctx, logger)
+
 	for _, link := range query.Links {
 		err := m.addLink(ctx, localPod, link)
 		if err != nil {
@@ -550,9 +563,12 @@ func (m *KubeDTN) AddLinks(ctx context.Context, query *pb.LinksBatchQuery) (*pb.
 func (m *KubeDTN) DelLinks(ctx context.Context, query *pb.LinksBatchQuery) (*pb.BoolResponse, error) {
 	localPod := query.LocalPod
 	logger := logger.WithFields(log.Fields{
-		"pod": localPod.Name,
-		"ns":  localPod.KubeNs,
+		"pod":    localPod.Name,
+		"ns":     localPod.KubeNs,
+		"action": "delete",
 	})
+	ctx = common.WithLogger(ctx, logger)
+
 	for _, link := range query.Links {
 		err := m.delLink(ctx, localPod, link)
 		if err != nil {
@@ -565,17 +581,24 @@ func (m *KubeDTN) DelLinks(ctx context.Context, query *pb.LinksBatchQuery) (*pb.
 
 func (m *KubeDTN) UpdateLinks(ctx context.Context, query *pb.LinksBatchQuery) (*pb.BoolResponse, error) {
 	localPod := query.LocalPod
+	logger := common.GetLogger(ctx).WithFields(log.Fields{
+		"pod":    localPod.Name,
+		"ns":     localPod.KubeNs,
+		"action": "update",
+	})
+	ctx = common.WithLogger(ctx, logger)
+
 	for _, link := range query.Links {
-		myVeth, err := common.MakeVeth(localPod.NetNs, link.LocalIntf, link.LocalIp, link.LocalMac)
+		myVeth, err := common.MakeVeth(ctx, localPod.NetNs, link.LocalIntf, link.LocalIp, link.LocalMac)
 		if err != nil {
 			return &pb.BoolResponse{Response: false}, nil
 		}
-		qdiscs, err := common.MakeQdiscs(link.Properties)
+		qdiscs, err := common.MakeQdiscs(ctx, link.Properties)
 		if err != nil {
 			logger.Errorf("Failed to construct qdiscs: %s", err)
 			return &pb.BoolResponse{Response: false}, err
 		}
-		err = common.SetVethQdiscs(myVeth, qdiscs)
+		err = common.SetVethQdiscs(ctx, myVeth, qdiscs)
 		if err != nil {
 			logger.Errorf("Failed to update qdiscs on self veth %s: %v", myVeth, err)
 			return &pb.BoolResponse{Response: false}, err

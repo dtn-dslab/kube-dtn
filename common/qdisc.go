@@ -1,6 +1,7 @@
 package common
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"os/exec"
@@ -16,7 +17,9 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func MakeQdiscs(properties *pb.LinkProperties) ([]netlink.Qdisc, error) {
+func MakeQdiscs(ctx context.Context, properties *pb.LinkProperties) ([]netlink.Qdisc, error) {
+	logger := GetLogger(ctx)
+
 	qdiscs := []netlink.Qdisc{}
 	if properties == nil || proto.Size(properties) == 0 {
 		return qdiscs, nil
@@ -24,67 +27,67 @@ func MakeQdiscs(properties *pb.LinkProperties) ([]netlink.Qdisc, error) {
 
 	latency, err := ParseDuration(properties.Latency)
 	if err != nil {
-		log.Errorf("Invalid latency value: %s", err)
+		logger.Errorf("Invalid latency value: %s", err)
 		return nil, err
 	}
 
 	latencyCorr, err := ParseFloatPercentage(properties.LatencyCorr)
 	if err != nil {
-		log.Errorf("Invalid latency correlation value: %s", err)
+		logger.Errorf("Invalid latency correlation value: %s", err)
 		return nil, err
 	}
 
 	jitter, err := ParseDuration(properties.Jitter)
 	if err != nil {
-		log.Errorf("Invalid jitter value: %s", err)
+		logger.Errorf("Invalid jitter value: %s", err)
 		return nil, err
 	}
 
 	loss, err := ParseFloatPercentage(properties.Loss)
 	if err != nil {
-		log.Errorf("Invalid loss value: %s", err)
+		logger.Errorf("Invalid loss value: %s", err)
 		return nil, err
 	}
 
 	lossCorr, err := ParseFloatPercentage(properties.LossCorr)
 	if err != nil {
-		log.Errorf("Invalid loss correlation value: %s", err)
+		logger.Errorf("Invalid loss correlation value: %s", err)
 		return nil, err
 	}
 
 	duplicate, err := ParseFloatPercentage(properties.Duplicate)
 	if err != nil {
-		log.Errorf("Invalid duplicate value: %s", err)
+		logger.Errorf("Invalid duplicate value: %s", err)
 		return nil, err
 	}
 
 	duplicateCorr, err := ParseFloatPercentage(properties.DuplicateCorr)
 	if err != nil {
-		log.Errorf("Invalid duplicate correlation value: %s", err)
+		logger.Errorf("Invalid duplicate correlation value: %s", err)
 		return nil, err
 	}
 
 	reorderProb, err := ParseFloatPercentage(properties.ReorderProb)
 	if err != nil {
-		log.Errorf("Invalid reorder probability value: %s", err)
+		logger.Errorf("Invalid reorder probability value: %s", err)
 		return nil, err
 	}
 
 	reorderCorr, err := ParseFloatPercentage(properties.ReorderCorr)
 	if err != nil {
-		log.Errorf("Invalid reorder correlation value: %s", err)
+		logger.Errorf("Invalid reorder correlation value: %s", err)
 		return nil, err
 	}
 
 	corruptProb, err := ParseFloatPercentage(properties.CorruptProb)
 	if err != nil {
-		log.Errorf("Invalid corrupt probability value: %s", err)
+		logger.Errorf("Invalid corrupt probability value: %s", err)
 		return nil, err
 	}
 
 	corruptCorr, err := ParseFloatPercentage(properties.CorruptCorr)
 	if err != nil {
-		log.Errorf("Invalid corrupt correlation value: %s", err)
+		logger.Errorf("Invalid corrupt correlation value: %s", err)
 		return nil, err
 	}
 
@@ -106,7 +109,7 @@ func MakeQdiscs(properties *pb.LinkProperties) ([]netlink.Qdisc, error) {
 
 	rate, err := ParseRate(properties.Rate)
 	if err != nil {
-		log.Errorf("Invalid rate value: %s", err)
+		logger.Errorf("Invalid rate value: %s", err)
 		return nil, err
 	}
 	if rate != 0 {
@@ -195,10 +198,12 @@ func ParseRate(rate string) (uint64, error) {
 	return value * unitMultiplier, nil
 }
 
-func SetVethQdiscs(veth *koko.VEth, qdiscs []netlink.Qdisc) (err error) {
-	err = ClearVethQdiscs(veth)
+func SetVethQdiscs(ctx context.Context, veth *koko.VEth, qdiscs []netlink.Qdisc) (err error) {
+	logger := GetLogger(ctx)
+
+	err = ClearVethQdiscs(ctx, veth)
 	if err != nil {
-		log.Errorf("Failed to clear qdiscs on veth %s: %v", veth.LinkName, err)
+		logger.Errorf("Failed to clear qdiscs on veth %s: %v", veth.LinkName, err)
 	}
 
 	if len(qdiscs) == 0 {
@@ -208,12 +213,12 @@ func SetVethQdiscs(veth *koko.VEth, qdiscs []netlink.Qdisc) (err error) {
 	var vethNs ns.NetNS
 	if veth.NsName == "" {
 		if vethNs, err = ns.GetCurrentNS(); err != nil {
-			log.Errorf("Failed to get current namespace: %v", err)
+			logger.Errorf("Failed to get current namespace: %v", err)
 			return err
 		}
 	} else {
 		if vethNs, err = ns.GetNS(veth.NsName); err != nil {
-			log.Errorf("Failed to get namespace %s: %v", veth.NsName, err)
+			logger.Errorf("Failed to get namespace %s: %v", veth.NsName, err)
 			return err
 		}
 	}
@@ -222,7 +227,7 @@ func SetVethQdiscs(veth *koko.VEth, qdiscs []netlink.Qdisc) (err error) {
 	return vethNs.Do(func(_ ns.NetNS) (err error) {
 		var link netlink.Link
 		if link, err = netlink.LinkByName(veth.LinkName); err != nil {
-			log.Errorf("Cannot get link %s in namespace %s: %v", veth.LinkName, veth.NsName, err)
+			logger.Errorf("Cannot get link %s in namespace %s: %v", veth.LinkName, veth.NsName, err)
 			return err
 		}
 
@@ -257,17 +262,17 @@ func SetVethQdiscs(veth *koko.VEth, qdiscs []netlink.Qdisc) (err error) {
 				cmd := exec.Command("tc", args...)
 				output, _err := cmd.CombinedOutput()
 				if _err != nil {
-					log.Errorf("Failed to exec tc command '%s' (%s): %s", cmd.String(), _err, output)
+					logger.Errorf("Failed to exec tc command '%s' (%s): %s", cmd.String(), _err, output)
 					err = fmt.Errorf("(%s) %s", _err, output)
 				}
 				newQdisc = qdisc
 			default:
-				log.Errorf("Unsupported qdisc type %s", qdisc.Type())
+				logger.Errorf("Unsupported qdisc type %s", qdisc.Type())
 			}
 
-			log.Infof("Setting qdisc %v on link %s", qdisc, veth.LinkName)
+			logger.Infof("Setting qdisc %v on link %s", qdisc, veth.LinkName)
 			if err != nil {
-				log.Errorf("Failed to set qdisc %v to link %s: %v", qdisc, veth.LinkName, err)
+				logger.Errorf("Failed to set qdisc %v to link %s: %v", qdisc, veth.LinkName, err)
 				return err
 			}
 		}
@@ -275,16 +280,18 @@ func SetVethQdiscs(veth *koko.VEth, qdiscs []netlink.Qdisc) (err error) {
 	})
 }
 
-func ClearVethQdiscs(veth *koko.VEth) (err error) {
+func ClearVethQdiscs(ctx context.Context, veth *koko.VEth) (err error) {
+	logger := GetLogger(ctx)
+
 	var vethNs ns.NetNS
 	if veth.NsName == "" {
 		if vethNs, err = ns.GetCurrentNS(); err != nil {
-			log.Errorf("Failed to get current namespace: %v", err)
+			logger.Errorf("Failed to get current namespace: %v", err)
 			return err
 		}
 	} else {
 		if vethNs, err = ns.GetNS(veth.NsName); err != nil {
-			log.Errorf("Failed to get namespace %s: %v", veth.NsName, err)
+			logger.Errorf("Failed to get namespace %s: %v", veth.NsName, err)
 			return err
 		}
 	}
@@ -293,12 +300,12 @@ func ClearVethQdiscs(veth *koko.VEth) (err error) {
 	return vethNs.Do(func(_ ns.NetNS) (err error) {
 		var link netlink.Link
 		if link, err = netlink.LinkByName(veth.LinkName); err != nil {
-			log.Errorf("Cannot get link %s in namespace %s: %v", veth.LinkName, veth.NsName, err)
+			logger.Errorf("Cannot get link %s in namespace %s: %v", veth.LinkName, veth.NsName, err)
 			return err
 		}
 		qdiscs, err := netlink.QdiscList(link)
 		if err != nil {
-			log.Errorf("Failed to list qdiscs for link %s: %v", veth.LinkName, err)
+			logger.Errorf("Failed to list qdiscs for link %s: %v", veth.LinkName, err)
 			return err
 		}
 		for _, qdisc := range qdiscs {
@@ -306,7 +313,7 @@ func ClearVethQdiscs(veth *koko.VEth) (err error) {
 			case *netlink.Netem, *netlink.Tbf:
 				err = netlink.QdiscDel(qdisc)
 				if err != nil {
-					log.Errorf("Failed to delete qdisc %v from link %s: %v", qdisc, veth.LinkName, err)
+					logger.Errorf("Failed to delete qdisc %v from link %s: %v", qdisc, veth.LinkName, err)
 				}
 			}
 		}

@@ -1,15 +1,18 @@
 package vxlan
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"strconv"
 	"strings"
 
 	"github.com/containernetworking/plugins/pkg/ns"
-	"github.com/redhat-nfvpe/koko/api"
+	koko "github.com/redhat-nfvpe/koko/api"
 	log "github.com/sirupsen/logrus"
 	"github.com/vishvananda/netlink"
+	"github.com/y-young/kube-dtn/common"
+	pb "github.com/y-young/kube-dtn/proto/v1"
 )
 
 type VxlanSpec struct {
@@ -22,14 +25,33 @@ type VxlanSpec struct {
 	SrcIp string
 }
 
-var vxlanLogger *log.Entry = nil
+// Set up VXLAN link with qdiscs
+func SetupVxLan(ctx context.Context, v *VxlanSpec, properties *pb.LinkProperties) (err error) {
+	logger := common.GetLogger(ctx)
 
-func InitLogger() {
-	vxlanLogger = log.WithFields(log.Fields{"daemon": "kubedtnd", "overlay": "vxLAN"})
+	var veth *koko.VEth
+	if veth, err = CreateOrUpdate(ctx, v); err != nil {
+		logger.Errorf("Failed to setup VXLAN: %v", err)
+		return nil
+	}
+
+	qdiscs, err := common.MakeQdiscs(ctx, properties)
+	if err != nil {
+		logger.Errorf("Failed to construct qdiscs: %v", err)
+		return err
+	}
+	err = common.SetVethQdiscs(ctx, veth, qdiscs)
+	if err != nil {
+		logger.Errorf("Failed to set qdisc on self veth %s: %v", veth, err)
+		return err
+	}
+	return nil
 }
 
 // CreateOrUpdate creates or updates the vxlan on the node.
-func CreateOrUpdate(v *VxlanSpec) (*api.VEth, error) {
+func CreateOrUpdate(ctx context.Context, v *VxlanSpec) (*koko.VEth, error) {
+	logger := common.GetLogger(ctx)
+
 	var err error
 	// Looking up VXLAN source interface
 	var srcIP string
@@ -42,10 +64,10 @@ func CreateOrUpdate(v *VxlanSpec) (*api.VEth, error) {
 	if err != nil {
 		return nil, err
 	}
-	vxlanLogger.Infof("VXLAN route is via %s@%s", srcIP, srcIntf)
+	logger.Infof("VXLAN route is via %s@%s", srcIP, srcIntf)
 
 	// Creating koko Veth struct
-	veth := api.VEth{
+	veth := koko.VEth{
 		NsName:   v.NetNs,
 		LinkName: v.IntfName,
 	}
@@ -61,59 +83,59 @@ func CreateOrUpdate(v *VxlanSpec) (*api.VEth, error) {
 			Mask: ipSubnet.Mask,
 		}}
 	}
-	vxlanLogger.Infof("Created koko Veth struct %+v", veth)
+	logger.Infof("Created koko Veth struct %+v", veth)
 
 	// Creating koko vxlan struct
-	vxlan := api.VxLan{
+	vxlan := koko.VxLan{
 		ParentIF: srcIntf,
 		IPAddr:   net.ParseIP(v.PeerVtep),
 		ID:       int(v.Vni),
 	}
-	vxlanLogger.Infof("Created koko vxlan struct %+v", vxlan)
+	logger.Infof("Created koko vxlan struct %+v", vxlan)
 
 	// Try to read interface attributes from netlink
-	link := getLinkFromNS(veth.NsName, veth.LinkName)
-	vxlanLogger.Infof("Retrieved %s link from %s Netns: %+v", veth.LinkName, veth.NsName, link)
+	link := getLinkFromNS(ctx, veth.NsName, veth.LinkName)
+	logger.Infof("Retrieved %s link from %s Netns: %+v", veth.LinkName, veth.NsName, link)
 
 	// Check if interface already exists
 	vxlanLink, isVxlan := link.(*netlink.Vxlan)
-	vxlanLogger.Infof("Is link %s a VXLAN?: %s", veth.LinkName, strconv.FormatBool(isVxlan))
+	logger.Infof("Is link %s a VXLAN?: %s", veth.LinkName, strconv.FormatBool(isVxlan))
 	if isVxlan { // the link we've found is a vxlan link
 		if vxlanEqual(vxlanLink, vxlan) { // If Vxlan attrs are the same, nothing to do
-			vxlanLogger.Infof("Vxlan attrs are the same")
+			logger.Infof("Vxlan attrs are the same")
 			return &veth, nil
 		}
 
 		// If Vxlan attrs are different
 		// We remove the existing link and add a new one
-		vxlanLogger.Infof("Vxlan attrs are different: %d!=%d or %v!=%v", vxlanLink.VxlanId, vxlan.ID, vxlanLink.Group, vxlan.IPAddr)
+		logger.Infof("Vxlan attrs are different: %d!=%d or %v!=%v", vxlanLink.VxlanId, vxlan.ID, vxlanLink.Group, vxlan.IPAddr)
 		if err = veth.RemoveVethLink(); err != nil {
 			return nil, fmt.Errorf("error when removing an old Vxlan interface with koko: %s", err)
 		}
 	} else { // the link we've found isn't a vxlan or doesn't exist
-		vxlanLogger.Infof("Link %+v we've found isn't a vxlan or doesn't exist", link)
+		logger.Infof("Link %+v we've found isn't a vxlan or doesn't exist", link)
 		// If link exists but wasn't matched as vxlan, we need to delete it
 		if link != nil {
-			vxlanLogger.Infof("Attempting to remove link %+v", veth)
+			logger.Infof("Attempting to remove link %+v", veth)
 			if err = veth.RemoveVethLink(); err != nil {
 				return nil, fmt.Errorf("error when removing an old non-Vxlan interface with koko: %s", err)
 			}
 		}
 	}
 
-	vxlanLogger.Infof("Creating a VXLAN link: %v; inside pod: %v", vxlan, veth)
-	if err = api.MakeVxLan(veth, vxlan); err != nil {
-		vxlanLogger.Infof("Error when creating a Vxlan interface with koko: %s", err)
+	logger.Infof("Creating a VXLAN link: %v; inside pod: %v", vxlan, veth)
+	if err = koko.MakeVxLan(veth, vxlan); err != nil {
+		logger.Infof("Error when creating a Vxlan interface with koko: %s", err)
 		if strings.Contains(err.Error(), "file exists") {
-			vxlanLogger.Infof("Trying to remove conflicting link with VNI %d", vxlan.ID)
+			logger.Infof("Trying to remove conflicting link with VNI %d", vxlan.ID)
 			// Conflicting interface name or VNI will incur this error,
 			// since we've removed the old interface previously,
 			// it's likely that another link with the same VNI already exists, remove it and try again.
-			if e := RemoveLinkWithVni(v.Vni, veth.NsName); e != nil {
-				vxlanLogger.Errorf("Failed to remove conflicting link with VNI %d: %s", vxlan.ID, err)
+			if e := RemoveLinkWithVni(ctx, v.Vni, veth.NsName); e != nil {
+				logger.Errorf("Failed to remove conflicting link with VNI %d: %s", vxlan.ID, err)
 				return nil, err
 			}
-			err = api.MakeVxLan(veth, vxlan)
+			err = koko.MakeVxLan(veth, vxlan)
 		}
 	}
 
@@ -125,7 +147,9 @@ func CreateOrUpdate(v *VxlanSpec) (*api.VEth, error) {
 }
 
 // getLinkFromNS retrieves netlink.Link from NetNS
-func getLinkFromNS(nsName string, linkName string) netlink.Link {
+func getLinkFromNS(ctx context.Context, nsName string, linkName string) netlink.Link {
+	logger := common.GetLogger(ctx)
+
 	// If namespace doesn't exist, do nothing and return empty result
 	vethNs, err := ns.GetNS(nsName)
 	if err != nil {
@@ -140,7 +164,7 @@ func getLinkFromNS(nsName string, linkName string) netlink.Link {
 		return err
 	})
 	if err != nil {
-		vxlanLogger.Infof("Failed to get link: %s", linkName)
+		logger.Infof("Link %s doesn't exist in %s", linkName, nsName)
 	}
 
 	return result
@@ -192,7 +216,7 @@ func GetDefaultVxlanSource() (srcIP string, srcIntf string, err error) {
 	return srcIP, srcIntf, nil
 }
 
-func vxlanEqual(l1 *netlink.Vxlan, l2 api.VxLan) bool {
+func vxlanEqual(l1 *netlink.Vxlan, l2 koko.VxLan) bool {
 	if l1.VxlanId != l2.ID {
 		return false
 	}
@@ -203,7 +227,9 @@ func vxlanEqual(l1 *netlink.Vxlan, l2 api.VxLan) bool {
 }
 
 // RemoveLinkWithVni removes a vxlan link with the given VNI
-func RemoveLinkWithVni(vni int32, netns string) error {
+func RemoveLinkWithVni(ctx context.Context, vni int32, netns string) error {
+	logger := common.GetLogger(ctx)
+
 	vethNs, err := ns.GetNS(netns)
 	if err != nil {
 		return err
@@ -225,12 +251,12 @@ func RemoveLinkWithVni(vni int32, netns string) error {
 				if err = netlink.LinkDel(vxlanLink); err != nil {
 					return fmt.Errorf("error deleting vxlan link: %s", err)
 				}
-				vxlanLogger.Infof("Successfully removed vxlan link %+v", vxlanLink)
+				logger.Infof("Successfully removed vxlan link %+v", vxlanLink)
 				return nil
 			}
 		}
 
-		vxlanLogger.Infof("No link with vni %d found", vni)
+		logger.Infof("No link with vni %d found", vni)
 		return nil
 	})
 }

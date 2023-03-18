@@ -12,7 +12,6 @@ import (
 	"github.com/y-young/kube-dtn/daemon/grpcwire"
 	"github.com/y-young/kube-dtn/daemon/kubedtn"
 	"github.com/y-young/kube-dtn/daemon/metrics"
-	"github.com/y-young/kube-dtn/daemon/vxlan"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -53,7 +52,6 @@ func main() {
 
 	kubedtn.InitLogger()
 	grpcwire.InitLogger()
-	vxlan.InitLogger()
 
 	topologyManager := metrics.NewTopologyManager()
 	reg := metrics.NewRegistry(topologyManager)
