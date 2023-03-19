@@ -154,6 +154,7 @@ func (m *KubeDTN) Update(ctx context.Context, pod *pb.RemotePod) (*pb.BoolRespon
 	}
 	m.vxlanManager.Add(pod.Vni, &pod.NetNs)
 
+	logger.Info("Successfully handled remote update")
 	return &pb.BoolResponse{Response: true}, nil
 }
 
@@ -404,6 +405,8 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 		}
 		logger.Infof("Successfully updated remote daemon")
 	}
+
+	logger.Info("Successfully added link")
 	return nil
 }
 
@@ -433,6 +436,7 @@ func (m *KubeDTN) delLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 		m.vxlanManager.Delete(vni)
 	}
 
+	logger.Info("Successfully deleted link")
 	return nil
 }
 
@@ -473,13 +477,13 @@ func (m *KubeDTN) SetupPod(ctx context.Context, pod *pb.SetupPodQuery) (*pb.Bool
 		return &pb.BoolResponse{Response: false}, err
 	}
 
-	logger.Info("Starting to traverse all links")
-	for _, link := range localPod.Links {
-		err = m.addLink(ctx, localPod, link)
-		if err != nil {
-			logger.Infof("Failed to add link %s: %s", link.String(), err)
-			return &pb.BoolResponse{Response: false}, err
-		}
+	response, err := m.AddLinks(ctx, &pb.LinksBatchQuery{
+		LocalPod: localPod,
+		Links:    localPod.Links,
+	})
+	if err != nil || !response.Response {
+		logger.Infof("Failed to setup links: %v", err)
+		return &pb.BoolResponse{Response: false}, err
 	}
 
 	logger.Infof("Successfully set up pod")
@@ -527,13 +531,13 @@ func (m *KubeDTN) DestroyPod(ctx context.Context, pod *pb.PodQuery) (*pb.BoolRes
 		return &pb.BoolResponse{Response: false}, fmt.Errorf("could not set alive status: %v", err)
 	}
 
-	logger.Infof("Iterating over each link for clean-up")
-	for _, link := range localPod.Links {
-		err := m.delLink(ctx, localPod, link)
-		if err != nil {
-			logger.Infof("Failed to remove link %s: %s", link.String(), err)
-			return &pb.BoolResponse{Response: false}, err
-		}
+	response, err := m.DelLinks(ctx, &pb.LinksBatchQuery{
+		LocalPod: localPod,
+		Links:    localPod.Links,
+	})
+	if err != nil || !response.Response {
+		logger.Infof("Failed to destroy links: %v", err)
+		return &pb.BoolResponse{Response: false}, err
 	}
 
 	m.topologyManager.Delete(pod.Name)
@@ -550,13 +554,24 @@ func (m *KubeDTN) AddLinks(ctx context.Context, query *pb.LinksBatchQuery) (*pb.
 	})
 	ctx = common.WithLogger(ctx, logger)
 
+	results := make(chan error, len(query.Links))
 	for _, link := range query.Links {
-		err := m.addLink(ctx, localPod, link)
+		go func(link *pb.Link) {
+			err := m.addLink(ctx, localPod, link)
+			if err != nil {
+				logger.WithField("link", link.Uid).Errorf("Failed to add link: %v", err)
+			}
+			results <- err
+		}(link)
+	}
+	for range query.Links {
+		err := <-results
 		if err != nil {
-			logger.WithField("link", link.Uid).Errorf("Failed to add link: %v", err)
 			return &pb.BoolResponse{Response: false}, err
 		}
 	}
+
+	logger.Infof("Successfully added links")
 	return &pb.BoolResponse{Response: true}, nil
 }
 
@@ -569,13 +584,24 @@ func (m *KubeDTN) DelLinks(ctx context.Context, query *pb.LinksBatchQuery) (*pb.
 	})
 	ctx = common.WithLogger(ctx, logger)
 
+	results := make(chan error, len(query.Links))
 	for _, link := range query.Links {
-		err := m.delLink(ctx, localPod, link)
+		go func(link *pb.Link) {
+			err := m.delLink(ctx, localPod, link)
+			if err != nil {
+				logger.WithField("link", link.Uid).Errorf("Failed to delete link: %v", err)
+			}
+			results <- err
+		}(link)
+	}
+	for range query.Links {
+		err := <-results
 		if err != nil {
-			logger.WithField("link", link.Uid).Errorf("Failed to delete link: %v", err)
 			return &pb.BoolResponse{Response: false}, err
 		}
 	}
+
+	logger.Infof("Successfully deleted links")
 	return &pb.BoolResponse{Response: true}, nil
 }
 
@@ -588,21 +614,33 @@ func (m *KubeDTN) UpdateLinks(ctx context.Context, query *pb.LinksBatchQuery) (*
 	})
 	ctx = common.WithLogger(ctx, logger)
 
+	results := make(chan error, len(query.Links))
 	for _, link := range query.Links {
-		myVeth, err := common.MakeVeth(ctx, localPod.NetNs, link.LocalIntf, link.LocalIp, link.LocalMac)
+		go func(link *pb.Link) {
+			myVeth, err := common.MakeVeth(ctx, localPod.NetNs, link.LocalIntf, link.LocalIp, link.LocalMac)
+			if err != nil {
+				results <- err
+			}
+			qdiscs, err := common.MakeQdiscs(ctx, link.Properties)
+			if err != nil {
+				logger.Errorf("Failed to construct qdiscs: %s", err)
+				results <- err
+			}
+			err = common.SetVethQdiscs(ctx, myVeth, qdiscs)
+			if err != nil {
+				logger.Errorf("Failed to update qdiscs on self veth %s: %v", myVeth, err)
+				results <- err
+			}
+		}(link)
+	}
+	for range query.Links {
+		err := <-results
 		if err != nil {
-			return &pb.BoolResponse{Response: false}, nil
-		}
-		qdiscs, err := common.MakeQdiscs(ctx, link.Properties)
-		if err != nil {
-			logger.Errorf("Failed to construct qdiscs: %s", err)
-			return &pb.BoolResponse{Response: false}, err
-		}
-		err = common.SetVethQdiscs(ctx, myVeth, qdiscs)
-		if err != nil {
-			logger.Errorf("Failed to update qdiscs on self veth %s: %v", myVeth, err)
+			logger.Errorf("Failed to update links: %v", err)
 			return &pb.BoolResponse{Response: false}, err
 		}
 	}
+
+	logger.Infof("Successfully updated links")
 	return &pb.BoolResponse{Response: true}, nil
 }
