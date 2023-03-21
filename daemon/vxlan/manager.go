@@ -2,6 +2,7 @@ package vxlan
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/containernetworking/plugins/pkg/ns"
 	log "github.com/sirupsen/logrus"
@@ -12,12 +13,12 @@ import (
 
 type VxlanManager struct {
 	// vni to netns mapping, synchronization is handled by linkMutexes
-	vxlans map[int32]*string
+	vxlans sync.Map
 }
 
 func NewVxlanManager() *VxlanManager {
 	return &VxlanManager{
-		vxlans: make(map[int32]*string),
+		vxlans: sync.Map{},
 	}
 }
 
@@ -41,7 +42,7 @@ func (m *VxlanManager) Init(topologies *v1.TopologyList) {
 				if !isVxlan {
 					continue
 				}
-				m.vxlans[int32(vxlanLink.VxlanId)] = &topology.Status.NetNs
+				m.vxlans.Store(int32(vxlanLink.VxlanId), &topology.Status.NetNs)
 				log.Debugf("Found vxlan %d in netns %s", vxlanLink.VxlanId, topology.Status.NetNs)
 			}
 			return nil
@@ -54,13 +55,17 @@ func (m *VxlanManager) Init(topologies *v1.TopologyList) {
 }
 
 func (m *VxlanManager) Add(vni int32, netns *string) {
-	m.vxlans[vni] = netns
+	m.vxlans.Store(vni, netns)
 }
 
 func (m *VxlanManager) Delete(vni int32) {
-	delete(m.vxlans, vni)
+	m.vxlans.Delete(vni)
 }
 
 func (m *VxlanManager) Get(vni int32) *string {
-	return m.vxlans[vni]
+	value, found := m.vxlans.Load(vni)
+	if !found {
+		return nil
+	}
+	return value.(*string)
 }
