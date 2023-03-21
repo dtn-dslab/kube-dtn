@@ -115,9 +115,11 @@ func (m *KubeDTN) SetAlive(ctx context.Context, pod *pb.Pod) (*pb.BoolResponse, 
 }
 
 func (m *KubeDTN) Update(ctx context.Context, pod *pb.RemotePod) (*pb.BoolResponse, error) {
+	uid := common.GetUidFromVni(pod.Vni)
 	logger := common.GetLogger(ctx).WithFields(log.Fields{
 		"pod":    pod.Name,
 		"ns":     pod.KubeNs,
+		"link":   uid,
 		"action": "remoteUpdate",
 	})
 	ctx = common.WithLogger(ctx, logger)
@@ -132,7 +134,7 @@ func (m *KubeDTN) Update(ctx context.Context, pod *pb.RemotePod) (*pb.BoolRespon
 		Vni:      pod.Vni,
 	}
 
-	mutex := m.linkMutexes.Get(common.GetUidFromVni(pod.Vni))
+	mutex := m.linkMutexes.Get(uid)
 	mutex.Lock()
 	defer mutex.Unlock()
 
@@ -390,14 +392,19 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 
 		mutex := m.linkMutexes.Get(link.Uid)
 		mutex.Lock()
-		defer mutex.Unlock()
 
 		if err = vxlan.SetupVxLan(ctx, vxlanSpec, link.Properties); err != nil {
 			logger.Infof("Error when setting up VXLAN interface with koko: %s", err)
+			mutex.Unlock()
 			return err
 		}
 		m.vxlanManager.Add(vxlanSpec.Vni, &vxlanSpec.NetNs)
 
+		// Unlock in advance to avoid deadlock
+		// If we and remote daemon are both in `addLink` and called `UpdateRemote` simultaneously,
+		// we will both be waiting forever since `Update` cannot acquire the lock
+		// while `addLink` is holding it.
+		mutex.Unlock()
 		// Now we need to make an API call to update the remote VTEP to point to us
 		err = common.UpdateRemote(ctx, localPod, peerPod, link)
 		if err != nil {
