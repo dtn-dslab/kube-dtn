@@ -16,6 +16,7 @@ import (
 	"google.golang.org/grpc/reflection"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/homedir"
 
@@ -25,6 +26,9 @@ import (
 	"github.com/y-young/kube-dtn/daemon/metrics"
 	"github.com/y-young/kube-dtn/daemon/vxlan"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/apimachinery/pkg/watch"
 
 	pb "github.com/y-young/kube-dtn/proto/v1"
 )
@@ -44,6 +48,7 @@ type KubeDTN struct {
 	rCfg            *rest.Config
 	s               *grpc.Server
 	lis             net.Listener
+	topologyStore   cache.Store
 	topologyManager *metrics.TopologyManager
 	vxlanManager    *vxlan.VxlanManager
 	linkMutexes     *common.MutexMap
@@ -110,6 +115,22 @@ func New(cfg Config, topologyManager *metrics.TopologyManager) (*KubeDTN, error)
 	vxlanManager := vxlan.NewVxlanManager()
 	vxlanManager.Init(localTopologies)
 
+	store, controller := cache.NewInformer(
+		&cache.ListWatch{
+			ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+				return tClient.Topology("").List(ctx, options)
+			},
+			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+				return tClient.Topology("").Watch(ctx, options)
+			},
+		},
+		&v1.Topology{},
+		0,
+		cache.ResourceEventHandlerFuncs{},
+	)
+
+	go controller.Run(wait.NeverStop)
+
 	m := &KubeDTN{
 		config:          cfg,
 		rCfg:            rCfg,
@@ -117,6 +138,7 @@ func New(cfg Config, topologyManager *metrics.TopologyManager) (*KubeDTN, error)
 		tClient:         tClient,
 		lis:             lis,
 		s:               newServerWithLogging(cfg.GRPCOpts...),
+		topologyStore:   store,
 		topologyManager: topologyManager,
 		vxlanManager:    vxlanManager,
 		linkMutexes:     &common.MutexMap{},

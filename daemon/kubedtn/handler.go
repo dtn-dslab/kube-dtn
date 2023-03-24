@@ -25,8 +25,18 @@ import (
 
 func (m *KubeDTN) getPod(ctx context.Context, name, ns string) (*v1.Topology, error) {
 	logger := common.GetLogger(ctx)
-	logger.Infof("Reading pod %s from K8s", name)
-	return m.tClient.Topology(ns).Get(ctx, name, metav1.GetOptions{})
+	if ns == "" {
+		ns = "default"
+	}
+	pod := fmt.Sprintf("%s/%s", ns, name)
+	logger.Infof("Reading pod %s from informer", pod)
+
+	obj, exists, err := m.topologyStore.GetByKey(pod)
+	if err != nil || !exists {
+		logger.Infof("Failed to read pod %s from informer, trying from K8s", name)
+		return m.tClient.Topology(ns).Get(ctx, name, metav1.GetOptions{})
+	}
+	return obj.(*v1.Topology), nil
 }
 
 func (m *KubeDTN) updateStatus(ctx context.Context, topology *v1.Topology, ns string) error {
@@ -38,11 +48,10 @@ func (m *KubeDTN) updateStatus(ctx context.Context, topology *v1.Topology, ns st
 
 func (m *KubeDTN) Get(ctx context.Context, pod *pb.PodQuery) (*pb.Pod, error) {
 	logger := common.GetLogger(ctx)
-	logger.Infof("Retrieving %s's metadata from K8s...", pod.Name)
 
 	topology, err := m.getPod(ctx, pod.Name, pod.KubeNs)
 	if err != nil {
-		logger.Errorf("Failed to read pod %s from K8s", pod.Name)
+		logger.Errorf("Failed to read pod %s", pod.Name)
 		return nil, err
 	}
 
