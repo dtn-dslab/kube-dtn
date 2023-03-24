@@ -47,6 +47,8 @@ type KubeDTN struct {
 	topologyManager *metrics.TopologyManager
 	vxlanManager    *vxlan.VxlanManager
 	linkMutexes     *common.MutexMap
+	// IP of the node on which the daemon is running.
+	nodeIP string
 }
 
 var logger *log.Entry = nil
@@ -90,13 +92,15 @@ func New(cfg Config, topologyManager *metrics.TopologyManager) (*KubeDTN, error)
 		return nil, err
 	}
 
+	nodeIP := os.Getenv("HOST_IP")
+
 	ctx := context.Background()
 	topologies, err := tClient.Topology("").List(ctx, metav1.ListOptions{})
 	logger.Infof("Found %d local topologies", len(topologies.Items))
 	if err != nil {
 		return nil, fmt.Errorf("failed to list topologies: %v", err)
 	}
-	localTopologies := filterLocalTopologies(topologies)
+	localTopologies := filterLocalTopologies(topologies, &nodeIP)
 
 	err = topologyManager.Init(localTopologies)
 	if err != nil {
@@ -116,6 +120,7 @@ func New(cfg Config, topologyManager *metrics.TopologyManager) (*KubeDTN, error)
 		topologyManager: topologyManager,
 		vxlanManager:    vxlanManager,
 		linkMutexes:     &common.MutexMap{},
+		nodeIP:          nodeIP,
 	}
 	pb.RegisterLocalServer(m.s, m)
 	pb.RegisterRemoteServer(m.s, m)
@@ -149,12 +154,11 @@ func newServerWithLogging(opts ...grpc.ServerOption) *grpc.Server {
 	return grpc.NewServer(opts...)
 }
 
-func filterLocalTopologies(topologies *v1.TopologyList) *v1.TopologyList {
-	nodeIP := os.Getenv("HOST_IP")
+func filterLocalTopologies(topologies *v1.TopologyList, nodeIP *string) *v1.TopologyList {
 	filtered := &v1.TopologyList{}
 	for _, topology := range topologies.Items {
 		topology := topology
-		if topology.Status.SrcIP == nodeIP {
+		if topology.Status.SrcIP == *nodeIP {
 			filtered.Items = append(filtered.Items, topology)
 		}
 	}

@@ -12,8 +12,6 @@ message Pod {
   string net_ns = 3;
   string kube_ns = 4;
   repeated Link links = 5;
-  // IP of the node on which the daemon is running.
-  string node_ip = 6;
 }
 
 message Link {

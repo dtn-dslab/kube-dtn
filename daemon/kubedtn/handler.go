@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"os"
 	"strings"
 
 	v1 "github.com/y-young/kube-dtn/api/v1"
@@ -68,7 +67,6 @@ func (m *KubeDTN) ToProtoPod(ctx context.Context, topology *v1.Topology) (*pb.Po
 
 	srcIP := topology.Status.SrcIP
 	netNs := topology.Status.NetNs
-	nodeIP := os.Getenv("HOST_IP")
 
 	return &pb.Pod{
 		Name:   topology.Name,
@@ -76,7 +74,6 @@ func (m *KubeDTN) ToProtoPod(ctx context.Context, topology *v1.Topology) (*pb.Po
 		NetNs:  netNs,
 		KubeNs: topology.Namespace,
 		Links:  links,
-		NodeIp: nodeIP,
 	}, nil
 }
 
@@ -283,8 +280,6 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 	ctx = common.WithLogger(ctx, logger)
 	logger.Infof("Adding link: %v", link)
 
-	nodeIP := os.Getenv("HOST_IP")
-
 	// Build koko's veth struct for local intf
 	myVeth, err := common.MakeVeth(ctx, localPod.NetNs, link.LocalIntf, link.LocalIp, link.LocalMac)
 	if err != nil {
@@ -387,7 +382,7 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 			IntfIp:   link.LocalIp,
 			PeerVtep: peerPod.SrcIp,
 			Vni:      common.GetVniFromUid(link.Uid),
-			SrcIp:    nodeIP,
+			SrcIp:    m.nodeIP,
 		}
 
 		mutex := m.linkMutexes.Get(link.Uid)
@@ -468,7 +463,7 @@ func (m *KubeDTN) SetupPod(ctx context.Context, pod *pb.SetupPodQuery) (*pb.Bool
 	}
 
 	// Finding the source IP and interface for VXLAN VTEP
-	srcIP, srcIntf, err := vxlan.GetVxlanSource(localPod.NodeIp)
+	srcIP, srcIntf, err := vxlan.GetVxlanSource(m.nodeIP)
 	if err != nil {
 		return &pb.BoolResponse{Response: false}, err
 	}
