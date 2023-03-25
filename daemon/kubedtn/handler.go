@@ -89,8 +89,9 @@ func (m *KubeDTN) ToProtoPod(ctx context.Context, topology *v1.Topology) (*pb.Po
 
 func (m *KubeDTN) SetAlive(ctx context.Context, pod *pb.Pod) (*pb.BoolResponse, error) {
 	logger := common.GetLogger(ctx).WithFields(log.Fields{
-		"pod": pod.Name,
-		"ns":  pod.KubeNs,
+		"pod":    pod.Name,
+		"ns":     pod.KubeNs,
+		"action": "setAlive",
 	})
 	ctx = common.WithLogger(ctx, logger)
 
@@ -99,7 +100,7 @@ func (m *KubeDTN) SetAlive(ctx context.Context, pod *pb.Pod) (*pb.BoolResponse, 
 	retryErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		topology, err := m.getPod(ctx, pod.Name, pod.KubeNs)
 		if err != nil {
-			logger.Errorf("Failed to read pod from K8s")
+			logger.Errorf("Failed to read pod from K8s: %v", err)
 			return err
 		}
 
@@ -111,10 +112,7 @@ func (m *KubeDTN) SetAlive(ctx context.Context, pod *pb.Pod) (*pb.BoolResponse, 
 	})
 
 	if retryErr != nil {
-		logger.WithFields(log.Fields{
-			"err":      retryErr,
-			"function": "SetAlive",
-		}).Errorf("Failed to update pod alive status")
+		logger.Errorf("Failed to update pod alive status: %v", retryErr)
 		return &pb.BoolResponse{Response: false}, retryErr
 	}
 
