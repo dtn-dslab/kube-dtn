@@ -55,6 +55,8 @@ func main() {
 
 	topologyManager := metrics.NewTopologyManager()
 	reg := metrics.NewRegistry(topologyManager)
+	latencyHistograms := metrics.NewLatencyHistograms()
+	latencyHistograms.Register(reg)
 
 	go func() {
 		log.Infof("HTTP server listening on port %s", httpAddr)
@@ -64,7 +66,7 @@ func main() {
 
 	m, err := kubedtn.New(kubedtn.Config{
 		Port: grpcPort,
-	}, topologyManager)
+	}, topologyManager, latencyHistograms)
 	if err != nil {
 		log.Errorf("Failed to create kubedtn: %v", err)
 		os.Exit(1)

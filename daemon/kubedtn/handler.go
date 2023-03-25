@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"time"
 
 	v1 "github.com/y-young/kube-dtn/api/v1"
 	"github.com/y-young/kube-dtn/daemon/grpcwire"
@@ -130,6 +131,7 @@ func (m *KubeDTN) Update(ctx context.Context, pod *pb.RemotePod) (*pb.BoolRespon
 	})
 	ctx = common.WithLogger(ctx, logger)
 	logger.Infof("Updating pod from remote")
+	startTime := time.Now()
 
 	var err error
 	vxlanSpec := &vxlan.VxlanSpec{
@@ -162,7 +164,9 @@ func (m *KubeDTN) Update(ctx context.Context, pod *pb.RemotePod) (*pb.BoolRespon
 	}
 	m.vxlanManager.Add(pod.Vni, &pod.NetNs)
 
-	logger.Info("Successfully handled remote update")
+	elapsed := time.Since(startTime)
+	m.latencyHistograms.Observe("remoteUpdate", elapsed.Milliseconds())
+	logger.Infof("Successfully handled remote update in %v", elapsed)
 	return &pb.BoolResponse{Response: true}, nil
 }
 
@@ -288,6 +292,7 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 	})
 	ctx = common.WithLogger(ctx, logger)
 	logger.Infof("Adding link: %v", link)
+	startTime := time.Now()
 
 	// Build koko's veth struct for local intf
 	myVeth, err := common.MakeVeth(ctx, localPod.NetNs, link.LocalIntf, link.LocalIp, link.LocalMac)
@@ -417,7 +422,9 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 		logger.Infof("Successfully updated remote daemon")
 	}
 
-	logger.Info("Successfully added link")
+	elapsed := time.Since(startTime)
+	m.latencyHistograms.Observe("add", elapsed.Milliseconds())
+	logger.Infof("Successfully added link in %v", elapsed)
 	return nil
 }
 
@@ -427,6 +434,7 @@ func (m *KubeDTN) delLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 	})
 	ctx = common.WithLogger(ctx, logger)
 	logger.Infof("Deleting link: %v", link)
+	startTime := time.Now()
 
 	// Creating koko's Veth struct for local intf
 	myVeth, err := common.MakeVeth(ctx, localPod.NetNs, link.LocalIntf, link.LocalIp, link.LocalMac)
@@ -447,7 +455,9 @@ func (m *KubeDTN) delLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 		m.vxlanManager.Delete(vni)
 	}
 
-	logger.Info("Successfully deleted link")
+	elapsed := time.Since(startTime)
+	m.latencyHistograms.Observe("del", elapsed.Milliseconds())
+	logger.Infof("Successfully deleted link in %v", elapsed)
 	return nil
 }
 
@@ -628,6 +638,10 @@ func (m *KubeDTN) UpdateLinks(ctx context.Context, query *pb.LinksBatchQuery) (*
 	results := make(chan error, len(query.Links))
 	for _, link := range query.Links {
 		go func(link *pb.Link) {
+			logger := logger.WithField("link", link.Uid)
+			logger.Infof("Updating link")
+			startTime := time.Now()
+
 			myVeth, err := common.MakeVeth(ctx, localPod.NetNs, link.LocalIntf, link.LocalIp, link.LocalMac)
 			if err != nil {
 				results <- err
@@ -642,6 +656,10 @@ func (m *KubeDTN) UpdateLinks(ctx context.Context, query *pb.LinksBatchQuery) (*
 				logger.Errorf("Failed to update qdiscs on self veth %s: %v", myVeth, err)
 				results <- err
 			}
+
+			elapsed := time.Since(startTime)
+			m.latencyHistograms.Observe("update", elapsed.Milliseconds())
+			logger.Infof("Successfully updated link in %v", elapsed)
 		}(link)
 	}
 	for range query.Links {

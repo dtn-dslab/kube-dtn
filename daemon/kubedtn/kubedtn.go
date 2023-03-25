@@ -42,16 +42,17 @@ type KubeDTN struct {
 	pb.UnimplementedLocalServer
 	pb.UnimplementedRemoteServer
 	pb.UnimplementedWireProtocolServer
-	config          Config
-	kClient         kubernetes.Interface
-	tClient         topologyclientv1.Interface
-	rCfg            *rest.Config
-	s               *grpc.Server
-	lis             net.Listener
-	topologyStore   cache.Store
-	topologyManager *metrics.TopologyManager
-	vxlanManager    *vxlan.VxlanManager
-	linkMutexes     *common.MutexMap
+	config            Config
+	kClient           kubernetes.Interface
+	tClient           topologyclientv1.Interface
+	rCfg              *rest.Config
+	s                 *grpc.Server
+	lis               net.Listener
+	topologyStore     cache.Store
+	topologyManager   *metrics.TopologyManager
+	vxlanManager      *vxlan.VxlanManager
+	latencyHistograms *metrics.LatencyHistograms
+	linkMutexes       *common.MutexMap
 	// IP of the node on which the daemon is running.
 	nodeIP string
 }
@@ -79,7 +80,7 @@ func restConfig() (*rest.Config, error) {
 	return rCfg, nil
 }
 
-func New(cfg Config, topologyManager *metrics.TopologyManager) (*KubeDTN, error) {
+func New(cfg Config, topologyManager *metrics.TopologyManager, latencyHistograms *metrics.LatencyHistograms) (*KubeDTN, error) {
 	rCfg, err := restConfig()
 	if err != nil {
 		return nil, err
@@ -132,17 +133,18 @@ func New(cfg Config, topologyManager *metrics.TopologyManager) (*KubeDTN, error)
 	go controller.Run(wait.NeverStop)
 
 	m := &KubeDTN{
-		config:          cfg,
-		rCfg:            rCfg,
-		kClient:         kClient,
-		tClient:         tClient,
-		lis:             lis,
-		s:               newServerWithLogging(cfg.GRPCOpts...),
-		topologyStore:   store,
-		topologyManager: topologyManager,
-		vxlanManager:    vxlanManager,
-		linkMutexes:     &common.MutexMap{},
-		nodeIP:          nodeIP,
+		config:            cfg,
+		rCfg:              rCfg,
+		kClient:           kClient,
+		tClient:           tClient,
+		lis:               lis,
+		s:                 newServerWithLogging(cfg.GRPCOpts...),
+		topologyStore:     store,
+		topologyManager:   topologyManager,
+		vxlanManager:      vxlanManager,
+		latencyHistograms: latencyHistograms,
+		linkMutexes:       &common.MutexMap{},
+		nodeIP:            nodeIP,
 	}
 	pb.RegisterLocalServer(m.s, m)
 	pb.RegisterRemoteServer(m.s, m)
