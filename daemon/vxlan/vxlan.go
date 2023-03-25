@@ -23,6 +23,8 @@ type VxlanSpec struct {
 	Vni      int32
 	// IP of VXLAN source interface
 	SrcIp string
+	// Name of VXLAN source interface
+	SrcIntf string
 }
 
 // Set up VXLAN link with qdiscs
@@ -32,7 +34,7 @@ func SetupVxLan(ctx context.Context, v *VxlanSpec, properties *pb.LinkProperties
 	var veth *koko.VEth
 	if veth, err = CreateOrUpdate(ctx, v); err != nil {
 		logger.Errorf("Failed to setup VXLAN: %v", err)
-		return nil
+		return err
 	}
 
 	qdiscs, err := common.MakeQdiscs(ctx, properties)
@@ -54,15 +56,17 @@ func CreateOrUpdate(ctx context.Context, v *VxlanSpec) (*koko.VEth, error) {
 
 	var err error
 	// Looking up VXLAN source interface
-	var srcIP string
-	var srcIntf string
-	if v.SrcIp == "" {
-		srcIP, srcIntf, err = GetDefaultVxlanSource()
-	} else {
-		srcIP, srcIntf, err = GetVxlanSource(v.SrcIp)
-	}
-	if err != nil {
-		return nil, err
+	srcIP := v.SrcIp
+	srcIntf := v.SrcIntf
+	if srcIntf == "" {
+		if srcIP == "" {
+			srcIP, srcIntf, err = GetDefaultVxlanSource()
+		} else {
+			srcIP, srcIntf, err = GetVxlanSource(srcIP)
+		}
+		if err != nil {
+			return nil, err
+		}
 	}
 	logger.Infof("VXLAN route is via %s@%s", srcIP, srcIntf)
 

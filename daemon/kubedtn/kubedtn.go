@@ -55,6 +55,8 @@ type KubeDTN struct {
 	linkMutexes       *common.MutexMap
 	// IP of the node on which the daemon is running.
 	nodeIP string
+	// VXLAN interface name.
+	vxlanIntf string
 }
 
 var logger *log.Entry = nil
@@ -116,6 +118,12 @@ func New(cfg Config, topologyManager *metrics.TopologyManager, latencyHistograms
 	vxlanManager := vxlan.NewVxlanManager()
 	vxlanManager.Init(localTopologies)
 
+	_, vxlanIntf, err := vxlan.GetVxlanSource(nodeIP)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get vxlan source: %v", err)
+	}
+	logger.Infof("Node IP: %s, VXLAN interface: %s", nodeIP, vxlanIntf)
+
 	store, controller := cache.NewInformer(
 		&cache.ListWatch{
 			ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
@@ -145,6 +153,7 @@ func New(cfg Config, topologyManager *metrics.TopologyManager, latencyHistograms
 		latencyHistograms: latencyHistograms,
 		linkMutexes:       &common.MutexMap{},
 		nodeIP:            nodeIP,
+		vxlanIntf:         vxlanIntf,
 	}
 	pb.RegisterLocalServer(m.s, m)
 	pb.RegisterRemoteServer(m.s, m)

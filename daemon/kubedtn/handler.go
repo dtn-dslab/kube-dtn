@@ -140,6 +140,8 @@ func (m *KubeDTN) Update(ctx context.Context, pod *pb.RemotePod) (*pb.BoolRespon
 		IntfIp:   pod.IntfIp,
 		PeerVtep: pod.PeerVtep,
 		Vni:      pod.Vni,
+		SrcIp:    m.nodeIP,
+		SrcIntf:  m.vxlanIntf,
 	}
 
 	mutex := m.linkMutexes.Get(uid)
@@ -397,6 +399,7 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 			PeerVtep: peerPod.SrcIp,
 			Vni:      common.GetVniFromUid(link.Uid),
 			SrcIp:    m.nodeIP,
+			SrcIntf:  m.vxlanIntf,
 		}
 
 		mutex := m.linkMutexes.Get(link.Uid)
@@ -481,16 +484,9 @@ func (m *KubeDTN) SetupPod(ctx context.Context, pod *pb.SetupPodQuery) (*pb.Bool
 		return &pb.BoolResponse{Response: true}, nil
 	}
 
-	// Finding the source IP and interface for VXLAN VTEP
-	srcIP, srcIntf, err := vxlan.GetVxlanSource(m.nodeIP)
-	if err != nil {
-		return &pb.BoolResponse{Response: false}, err
-	}
-	logger.Infof("VXLAN route is via %s@%s", srcIP, srcIntf)
-
 	// Marking pod as "alive" by setting its srcIP and NetNS
 	localPod.NetNs = pod.NetNs
-	localPod.SrcIp = srcIP
+	localPod.SrcIp = m.nodeIP
 	logger.Infof("Setting pod alive status")
 	ok, err := m.SetAlive(ctx, localPod)
 	if err != nil || !ok.Response {
