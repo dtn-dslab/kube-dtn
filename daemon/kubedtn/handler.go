@@ -596,19 +596,10 @@ func (m *KubeDTN) AddLinks(ctx context.Context, query *pb.LinksBatchQuery) (*pb.
 	})
 	ctx = common.WithLogger(ctx, logger)
 
-	results := make(chan error, len(query.Links))
 	for _, link := range query.Links {
-		go func(link *pb.Link) {
-			err := m.addLink(ctx, localPod, link)
-			if err != nil {
-				logger.WithField("link", link.Uid).Errorf("Failed to add link: %v", err)
-			}
-			results <- err
-		}(link)
-	}
-	for range query.Links {
-		err := <-results
+		err := m.addLink(ctx, localPod, link)
 		if err != nil {
+			logger.WithField("link", link.Uid).Errorf("Failed to add link: %v", err)
 			return &pb.BoolResponse{Response: false}, err
 		}
 	}
@@ -626,19 +617,10 @@ func (m *KubeDTN) DelLinks(ctx context.Context, query *pb.LinksBatchQuery) (*pb.
 	})
 	ctx = common.WithLogger(ctx, logger)
 
-	results := make(chan error, len(query.Links))
 	for _, link := range query.Links {
-		go func(link *pb.Link) {
-			err := m.delLink(ctx, localPod, link)
-			if err != nil {
-				logger.WithField("link", link.Uid).Errorf("Failed to delete link: %v", err)
-			}
-			results <- err
-		}(link)
-	}
-	for range query.Links {
-		err := <-results
+		err := m.delLink(ctx, localPod, link)
 		if err != nil {
+			logger.WithField("link", link.Uid).Errorf("Failed to delete link: %v", err)
 			return &pb.BoolResponse{Response: false}, err
 		}
 	}
@@ -656,40 +638,29 @@ func (m *KubeDTN) UpdateLinks(ctx context.Context, query *pb.LinksBatchQuery) (*
 	})
 	ctx = common.WithLogger(ctx, logger)
 
-	results := make(chan error, len(query.Links))
 	for _, link := range query.Links {
-		go func(link *pb.Link) {
-			logger := logger.WithField("link", link.Uid)
-			logger.Infof("Updating link")
-			startTime := time.Now()
+		logger := logger.WithField("link", link.Uid)
+		logger.Infof("Updating link")
+		startTime := time.Now()
 
-			myVeth, err := common.MakeVeth(ctx, localPod.NetNs, link.LocalIntf, link.LocalIp, link.LocalMac)
-			if err != nil {
-				results <- err
-			}
-			qdiscs, err := common.MakeQdiscs(ctx, link.Properties)
-			if err != nil {
-				logger.Errorf("Failed to construct qdiscs: %s", err)
-				results <- err
-			}
-			err = common.SetVethQdiscs(ctx, myVeth, qdiscs)
-			if err != nil {
-				logger.Errorf("Failed to update qdiscs on self veth %s: %v", myVeth, err)
-				results <- err
-			}
-
-			elapsed := time.Since(startTime)
-			m.latencyHistograms.Observe("update", elapsed.Milliseconds())
-			logger.Infof("Successfully updated link in %v", elapsed)
-			results <- nil
-		}(link)
-	}
-	for range query.Links {
-		err := <-results
+		myVeth, err := common.MakeVeth(ctx, localPod.NetNs, link.LocalIntf, link.LocalIp, link.LocalMac)
 		if err != nil {
-			logger.Errorf("Failed to update links: %v", err)
 			return &pb.BoolResponse{Response: false}, err
 		}
+		qdiscs, err := common.MakeQdiscs(ctx, link.Properties)
+		if err != nil {
+			logger.Errorf("Failed to construct qdiscs: %s", err)
+			return &pb.BoolResponse{Response: false}, err
+		}
+		err = common.SetVethQdiscs(ctx, myVeth, qdiscs)
+		if err != nil {
+			logger.Errorf("Failed to update qdiscs on self veth %s: %v", myVeth, err)
+			return &pb.BoolResponse{Response: false}, err
+		}
+
+		elapsed := time.Since(startTime)
+		m.latencyHistograms.Observe("update", elapsed.Milliseconds())
+		logger.Infof("Successfully updated link in %v", elapsed)
 	}
 
 	logger.Infof("Successfully updated links")
