@@ -43,7 +43,7 @@ func (m *KubeDTN) getPod(ctx context.Context, name, ns string) (*v1.Topology, er
 func (m *KubeDTN) updateStatus(ctx context.Context, topology *v1.Topology, ns string) error {
 	logger := common.GetLogger(ctx)
 	logger.Infof("Update pod status %s from K8s", topology.Name)
-	_, err := m.tClient.Topology(ns).Update(ctx, topology, metav1.UpdateOptions{})
+	_, err := m.tClient.Topology(ns).UpdateStatus(ctx, topology, metav1.UpdateOptions{})
 	return err
 }
 
@@ -96,6 +96,7 @@ func (m *KubeDTN) SetAlive(ctx context.Context, pod *pb.Pod) (*pb.BoolResponse, 
 	ctx = common.WithLogger(ctx, logger)
 
 	logger.Infof("Setting SrcIp=%s and NetNs=%s", pod.SrcIp, pod.NetNs)
+	alive := pod.SrcIp != "" && pod.NetNs != ""
 
 	retryErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		topology, err := m.getPod(ctx, pod.Name, pod.KubeNs)
@@ -104,9 +105,13 @@ func (m *KubeDTN) SetAlive(ctx context.Context, pod *pb.Pod) (*pb.BoolResponse, 
 			return err
 		}
 
+		if alive {
+			m.topologyManager.Add(topology)
+		} else {
+			m.topologyManager.Delete(topology.Name, topology.Namespace)
+		}
 		topology.Status.SrcIP = pod.SrcIp
 		topology.Status.NetNs = pod.NetNs
-		m.topologyManager.Add(topology)
 
 		return m.updateStatus(ctx, topology, pod.KubeNs)
 	})
@@ -114,6 +119,28 @@ func (m *KubeDTN) SetAlive(ctx context.Context, pod *pb.Pod) (*pb.BoolResponse, 
 	if retryErr != nil {
 		logger.Errorf("Failed to update pod alive status: %v", retryErr)
 		return &pb.BoolResponse{Response: false}, retryErr
+	}
+
+	// UpdateStatus can only update the status field, but we need to update metadata
+	retryErr = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		topology, err := m.getPod(ctx, pod.Name, pod.KubeNs)
+		if err != nil {
+			logger.Errorf("Failed to read pod from K8s: %v", err)
+			return err
+		}
+
+		if alive {
+			topology.Finalizers = append(topology.Finalizers, v1.GroupVersion.Identifier())
+		} else {
+			topology.Finalizers = []string{}
+		}
+
+		_, err = m.tClient.Topology(pod.KubeNs).Update(ctx, topology, metav1.UpdateOptions{})
+		return err
+	})
+
+	if retryErr != nil {
+		logger.Errorf("Failed to set finalizer: %v", retryErr)
 	}
 
 	return &pb.BoolResponse{Response: true}, nil
@@ -515,7 +542,7 @@ func (m *KubeDTN) DestroyPod(ctx context.Context, pod *pb.PodQuery) (*pb.BoolRes
 	ctx = common.WithLogger(ctx, logger)
 	logger.Infof("Destroying pod")
 
-	m.topologyManager.Delete(pod.Name)
+	m.topologyManager.Delete(pod.Name, pod.KubeNs)
 	// Close the grpc tunnel for this pod netns (if any)
 	wireDef := pb.WireDef{
 		KubeNs:       string(pod.KubeNs),

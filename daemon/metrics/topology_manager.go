@@ -1,6 +1,8 @@
 package metrics
 
 import (
+	"fmt"
+
 	v1 "github.com/y-young/kube-dtn/api/v1"
 )
 
@@ -26,15 +28,18 @@ func (m *TopologyManager) Init(topologies *v1.TopologyList) error {
 }
 
 func (m *TopologyManager) Add(topology *v1.Topology) {
-	m.topologies[topology.Name] = topology
+	key := fmt.Sprintf("%s/%s", topology.Namespace, topology.Name)
+	m.topologies[key] = topology
 }
 
-func (m *TopologyManager) Delete(name string) {
-	delete(m.topologies, name)
+func (m *TopologyManager) Delete(name string, ns string) {
+	key := fmt.Sprintf("%s/%s", ns, name)
+	delete(m.topologies, key)
 }
 
-func (m *TopologyManager) Get(name string) *v1.Topology {
-	return m.topologies[name]
+func (m *TopologyManager) Get(name string, ns string) *v1.Topology {
+	key := fmt.Sprintf("%s/%s", ns, name)
+	return m.topologies[key]
 }
 
 func (m *TopologyManager) List() []*v1.Topology {

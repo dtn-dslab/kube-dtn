@@ -37,6 +37,7 @@ type TopologyInterface interface {
 	Watch(ctx context.Context, opts metav1.ListOptions) (watch.Interface, error)
 	Unstructured(ctx context.Context, name string, opts metav1.GetOptions, subresources ...string) (*unstructured.Unstructured, error)
 	Update(ctx context.Context, topology *topologyv1.Topology, opts metav1.UpdateOptions) (*topologyv1.Topology, error)
+	UpdateStatus(ctx context.Context, topology *topologyv1.Topology, opts metav1.UpdateOptions) (*topologyv1.Topology, error)
 }
 
 // Interface is the clientset interface for topology.
@@ -154,6 +155,20 @@ func (t *topologyClient) Delete(ctx context.Context, name string, opts metav1.De
 }
 
 func (t *topologyClient) Update(ctx context.Context, topology *topologyv1.Topology, opts metav1.UpdateOptions) (*topologyv1.Topology, error) {
+	result := topologyv1.Topology{}
+	err := t.restClient.
+		Put().
+		Namespace(t.ns).
+		Resource("topologies").
+		Name(topology.Name).
+		VersionedParams(&opts, scheme.ParameterCodec).
+		Body(topology).
+		Do(ctx).
+		Into(&result)
+	return &result, err
+}
+
+func (t *topologyClient) UpdateStatus(ctx context.Context, topology *topologyv1.Topology, opts metav1.UpdateOptions) (*topologyv1.Topology, error) {
 	result := topologyv1.Topology{}
 	err := t.restClient.
 		Put().
