@@ -515,6 +515,7 @@ func (m *KubeDTN) DestroyPod(ctx context.Context, pod *pb.PodQuery) (*pb.BoolRes
 	ctx = common.WithLogger(ctx, logger)
 	logger.Infof("Destroying pod")
 
+	m.topologyManager.Delete(pod.Name)
 	// Close the grpc tunnel for this pod netns (if any)
 	wireDef := pb.WireDef{
 		KubeNs:       string(pod.KubeNs),
@@ -555,7 +556,6 @@ func (m *KubeDTN) DestroyPod(ctx context.Context, pod *pb.PodQuery) (*pb.BoolRes
 		return &pb.BoolResponse{Response: false}, err
 	}
 
-	m.topologyManager.Delete(pod.Name)
 	logger.Infof("Successfully destroyed pod")
 	return &pb.BoolResponse{Response: true}, nil
 }

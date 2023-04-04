@@ -9,6 +9,7 @@ import (
 )
 
 type InterfaceStatisticsCollector struct {
+	prometheus.Collector
 	manager *TopologyManager
 }
 
