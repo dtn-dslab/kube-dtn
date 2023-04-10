@@ -8,7 +8,6 @@ import (
 
 	"github.com/goccy/go-yaml"
 	log "github.com/sirupsen/logrus"
-	"github.com/vishvananda/netlink"
 	"github.com/y-young/kube-dtn/common"
 	"github.com/y-young/kube-dtn/daemon/vxlan"
 	pb "github.com/y-young/kube-dtn/proto/v1"
@@ -49,8 +48,26 @@ func main() {
 	link := &query.Link
 	query.Print()
 
-	if *intf == "" || *ip == "" {
-		*intf, *ip = getVxlanSource()
+	pseudoPod := link.PeerPod
+	if strings.HasPrefix(pseudoPod, "physical/") {
+		*ip = strings.TrimPrefix(pseudoPod, "physical/")
+	} else {
+		log.Fatalf("Peer pod name should begin with \"physical/\": %s", pseudoPod)
+		return
+	}
+
+	if *intf == "" && *ip == "" {
+		*intf, *ip, err = vxlan.GetDefaultVxlanSource()
+		if err != nil {
+			log.Fatalf("Failed to get default vxlan source: %s", err)
+			return
+		}
+	} else if *intf == "" {
+		*intf, _, err = vxlan.GetVxlanSource(*ip)
+		if err != nil {
+			log.Fatalf("Failed to get vxlan source with IP %s: %s", *ip, err)
+			return
+		}
 	}
 	if *intf == "" || *ip == "" {
 		log.Fatalf("Failed to get vxlan source, please specify manually")
@@ -65,31 +82,14 @@ func main() {
 	}
 }
 
-func getVxlanSource() (intf string, ip string) {
-	links, _ := netlink.LinkList()
-	for _, l := range links {
-		attrs := l.Attrs()
-		if strings.HasPrefix(attrs.Name, "eth") || strings.HasPrefix(attrs.Name, "ens") {
-			intf = attrs.Name
-			log.Infof("VXLAN Source Interface: %s", intf)
-			addrs, _ := netlink.AddrList(l, netlink.FAMILY_V4)
-			for _, a := range addrs {
-				ip = a.IP.String()
-				log.Infof("Local Address: %s", ip)
-			}
-			break
-		}
-	}
-	return intf, ip
-}
-
-func addLink(link *pb.Link, srcIntf string, peerIP string) error {
+func addLink(link *pb.Link, srcIntf string, peerVtep string) error {
 	// We're connecting physical host interface, so use root network namespace
 	vxlanSpec := &vxlan.VxlanSpec{
-		NetNs:    "",
-		IntfName: link.LocalIntf,
-		IntfIp:   link.LocalIp,
-		PeerVtep: peerIP,
+		NetNs: "",
+		// Link in configuration file is from pod's perspective, so we need to reverse it
+		IntfName: link.PeerIntf,
+		IntfIp:   link.PeerIp,
+		PeerVtep: peerVtep,
 		Vni:      common.GetVniFromUid(link.Uid),
 	}
 	ctx := context.WithValue(context.Background(), common.CtxKey("logger"), log.New())
