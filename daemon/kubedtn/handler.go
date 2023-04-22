@@ -681,6 +681,7 @@ func (m *KubeDTN) UpdateLinks(ctx context.Context, query *pb.LinksBatchQuery) (*
 			elapsed := time.Since(startTime)
 			m.latencyHistograms.Observe("update", elapsed.Milliseconds())
 			logger.Infof("Successfully updated link in %v", elapsed)
+			results <- nil
 		}(link)
 	}
 	for range query.Links {
