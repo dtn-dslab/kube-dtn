@@ -19,3 +19,11 @@ func GetLogger(ctx context.Context) *log.Entry {
 	}
 	return logger
 }
+
+func WithCtxValue(ctx context.Context, key string, value interface{}) context.Context {
+	return context.WithValue(ctx, CtxKey(key), value)
+}
+
+func GetCtxValue(ctx context.Context, key string) interface{} {
+	return ctx.Value(CtxKey(key))
+}

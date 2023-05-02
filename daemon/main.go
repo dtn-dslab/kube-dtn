@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	log "github.com/sirupsen/logrus"
+	"github.com/y-young/kube-dtn/bpf"
 	"github.com/y-young/kube-dtn/common"
 	"github.com/y-young/kube-dtn/daemon/cni"
 	"github.com/y-young/kube-dtn/daemon/grpcwire"
@@ -64,8 +65,33 @@ func main() {
 		http.ListenAndServe(httpAddr, nil)
 	}()
 
+	tcpIpBypass := os.Getenv(common.TCPIP_BYPASS) == "1"
+	if tcpIpBypass {
+		log.Info("TCP/IP bypass enabled")
+		var prog bpf.BypassProgram
+
+		err = bpf.CheckOrMountBPFFSDefault()
+		if err != nil {
+			log.Errorf("BPF filesystem mounting on /sys/fs/bpf failed: %s", err)
+			return
+		}
+
+		if err := bpf.SetLimit(); err != nil {
+			log.Errorf("Setting limit failed: %s", err)
+			return
+		}
+
+		prog, err = bpf.LoadProgram(prog)
+		if err != nil {
+			log.Errorf("Loading program failed: %s", err)
+			return
+		}
+		defer bpf.CloseProgram(prog)
+	}
+
 	m, err := kubedtn.New(kubedtn.Config{
-		Port: grpcPort,
+		Port:        grpcPort,
+		TCPIPBypass: tcpIpBypass,
 	}, topologyManager, latencyHistograms)
 	if err != nil {
 		log.Errorf("Failed to create kubedtn: %v", err)

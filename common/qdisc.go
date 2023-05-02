@@ -224,6 +224,11 @@ func SetVethQdiscs(ctx context.Context, veth *koko.VEth, qdiscs []netlink.Qdisc)
 	}
 	defer vethNs.Close()
 
+	tcpIpBypass, ok := GetCtxValue(ctx, TCPIP_BYPASS).(bool)
+	if !ok {
+		tcpIpBypass = false
+	}
+
 	return vethNs.Do(func(_ ns.NetNS) (err error) {
 		var link netlink.Link
 		if link, err = netlink.LinkByName(veth.LinkName); err != nil {
@@ -276,7 +281,11 @@ func SetVethQdiscs(ctx context.Context, veth *koko.VEth, qdiscs []netlink.Qdisc)
 				return err
 			}
 		}
-		return nil
+
+		if tcpIpBypass {
+			err = AddBpf(ctx, veth, "/opt/kubedtn/redir_disable_bpf.o", "egress")
+		}
+		return err
 	})
 }
 
@@ -315,10 +324,37 @@ func ClearVethQdiscs(ctx context.Context, veth *koko.VEth) (err error) {
 				if err != nil {
 					logger.Errorf("Failed to delete qdisc %v from link %s: %v", qdisc, veth.LinkName, err)
 				}
+			case *netlink.GenericQdisc:
+				if qdisc.Handle == netlink.MakeHandle(0xffff, 0) {
+					// clsact qdisc
+					err = netlink.QdiscDel(qdisc)
+					if err != nil {
+						logger.Errorf("Failed to delete qdisc %v from link %s: %v", qdisc, veth.LinkName, err)
+					}
+				}
 			}
 		}
 		return nil
 	})
+}
+
+// AddBpf adds a BPF program to a veth device egress
+func AddBpf(ctx context.Context, veth *koko.VEth, path, section string) (err error) {
+	logger := GetLogger(ctx)
+	cmd := exec.Command("tc", "qdisc", "add", "dev", veth.LinkName, "clsact")
+	output, _err := cmd.CombinedOutput()
+	if _err != nil {
+		logger.Errorf("Failed to exec tc command '%s' (%s): %s", cmd.String(), _err, output)
+		return fmt.Errorf("(%s) %s", _err, output)
+	}
+
+	cmd = exec.Command("tc", "filter", "add", "dev", veth.LinkName, "egress", "bpf", "obj", path, "sec", section)
+	output, _err = cmd.CombinedOutput()
+	if _err != nil {
+		logger.Errorf("Failed to exec tc command '%s' (%s): %s", cmd.String(), _err, output)
+		return fmt.Errorf("(%s) %s", _err, output)
+	}
+	return nil
 }
 
 // Calculate burst size for TBF qdisc

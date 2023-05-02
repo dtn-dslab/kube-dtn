@@ -13,4 +13,5 @@ const (
 	MacvlanMode           = netlink.MACVLAN_MODE_BRIDGE
 	INTER_NODE_LINK_VXLAN = "VXLAN"
 	INTER_NODE_LINK_GRPC  = "GRPC"
+	TCPIP_BYPASS          = "TCPIP_BYPASS"
 )

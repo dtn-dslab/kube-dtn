@@ -318,6 +318,8 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 		"link": link.Uid,
 	})
 	ctx = common.WithLogger(ctx, logger)
+	ctx = common.WithCtxValue(ctx, common.TCPIP_BYPASS, m.config.TCPIPBypass)
+
 	logger.Infof("Adding link: %v", link)
 	startTime := time.Now()
 
@@ -637,6 +639,7 @@ func (m *KubeDTN) UpdateLinks(ctx context.Context, query *pb.LinksBatchQuery) (*
 		"action": "update",
 	})
 	ctx = common.WithLogger(ctx, logger)
+	ctx = common.WithCtxValue(ctx, common.TCPIP_BYPASS, m.config.TCPIPBypass)
 
 	for _, link := range query.Links {
 		logger := logger.WithField("link", link.Uid)

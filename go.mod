@@ -3,8 +3,10 @@ module github.com/y-young/kube-dtn
 go 1.19
 
 require (
+	github.com/cilium/ebpf v0.7.0
 	github.com/containernetworking/cni v0.8.1
 	github.com/containernetworking/plugins v0.9.1
+	github.com/containers/common v0.46.0
 	github.com/davecgh/go-spew v1.1.1
 	github.com/goccy/go-yaml v1.9.8
 	github.com/google/gopacket v1.1.19
@@ -17,6 +19,7 @@ require (
 	github.com/sirupsen/logrus v1.8.1
 	github.com/vishvananda/netlink v1.1.1-0.20201029203352-d40f9887b852
 	go.uber.org/zap v1.21.0
+	golang.org/x/sys v0.5.0
 	google.golang.org/grpc v1.47.0
 	google.golang.org/protobuf v1.28.1
 	k8s.io/apimachinery v0.25.0
@@ -37,7 +40,7 @@ require (
 	github.com/PuerkitoBio/urlesc v0.0.0-20170810143723-de5bf2ad4578 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect
-	github.com/containerd/containerd v1.5.0-rc.0 // indirect
+	github.com/containerd/containerd v1.5.1 // indirect
 	github.com/docker/distribution v2.8.1+incompatible // indirect
 	github.com/docker/docker v20.10.12+incompatible // indirect
 	github.com/docker/go-connections v0.4.0 // indirect
@@ -83,7 +86,6 @@ require (
 	golang.org/x/crypto v0.0.0-20220315160706-3147a52a75dd // indirect
 	golang.org/x/net v0.0.0-20220722155237-a158d28d115b // indirect
 	golang.org/x/oauth2 v0.0.0-20220223155221-ee480838109b // indirect
-	golang.org/x/sys v0.5.0 // indirect
 	golang.org/x/term v0.5.0 // indirect
 	golang.org/x/text v0.7.0 // indirect
 	golang.org/x/time v0.0.0-20220609170525-579cf78fd858 // indirect

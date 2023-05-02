@@ -34,8 +34,9 @@ import (
 )
 
 type Config struct {
-	Port     int
-	GRPCOpts []grpc.ServerOption
+	Port        int
+	GRPCOpts    []grpc.ServerOption
+	TCPIPBypass bool
 }
 
 type KubeDTN struct {
