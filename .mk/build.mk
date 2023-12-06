@@ -1,11 +1,11 @@
-CNI_IMG := y-young/kubedtn
+CNI_IMG := registry.cn-hangzhou.aliyuncs.com/reins/kubedtn
 GOPATH ?= ${HOME}/go
 ARCHS := "linux/amd64"
 
 ## Build CNI plugin and daemon
 cni-build:
-	CGO_ENABLED=1 GOOS=linux go build -o bin/kubedtn github.com/y-young/kube-dtn/plugin 
-	CGO_ENABLED=1 GOOS=linux go build -o bin/kubedtnd github.com/y-young/kube-dtn/daemon
+	CGO_ENABLED=1 GOOS=linux go build -o bin/kubedtn ./plugin
+	CGO_ENABLED=1 GOOS=linux go build -o bin/kubedtnd ./daemon
 
 .PHONY: cni-docker
 ## Build CNI plugin docker image
@@ -17,12 +17,12 @@ cni-docker:
 	--platform "${ARCHS}" \
 	--tag ${CNI_IMG}:${COMMIT} \
 	-f docker/Dockerfile.cni \
+	--no-cache \
 	.
 
 cni-push:
-	docker tag ${CNI_IMG}:${COMMIT} registry.cn-shanghai.aliyuncs.com/gpx/kubedtn:${TAG}
-	docker push registry.cn-shanghai.aliyuncs.com/gpx/kubedtn:${TAG}
+	docker push ${CNI_IMG}:${COMMIT}
 
 ## Build CLI
 cmd-build:
-	CGO_ENABLED=1 GOOS=linux go build -o bin/kubedtn-cli github.com/y-young/kube-dtn/cmd
+	CGO_ENABLED=1 GOOS=linux go build -o bin/kubedtn-cli ./cmd

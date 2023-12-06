@@ -3,9 +3,13 @@ FROM golang:1.18.2 AS proto_base
 
 WORKDIR /src
 
-ENV GOPROXY=https://mirrors.aliyun.com/goproxy/
-RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
-RUN go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+ENV GO111MODULE=on
+ENV GOPROXY=https://goproxy.cn,direct
+# ENV ALL_PROXY=http://10.0.0.11:7890
+# ENV HTTP_PROXY=http://10.0.0.11:7890
+# ENV HTTPS_PROXY=http://10.0.0.11:7890
+RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.28.1
+RUN go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.2.0
 RUN go install github.com/bufbuild/buf/cmd/buf@v1.9.0
 
 COPY proto .
@@ -50,9 +54,9 @@ RUN sed -i 's/http:\/\/deb.debian.org/http:\/\/mirror.sjtu.edu.cn/g' /etc/apt/so
     apt-get update -y; \
     apt-get install -y libpcap-dev; \
     apt-get install -y libsystemd-dev
-    # apt-get install -y libmnl; \
-    # apt-get install -y libmnl-dev; \
-    # go get github.com/chamaken/cgolmnl
+# apt-get install -y libmnl; \
+# apt-get install -y libmnl-dev; \
+# go get github.com/chamaken/cgolmnl
 
 COPY go.mod .
 COPY go.sum .
@@ -75,7 +79,7 @@ COPY common/ common/
 COPY bpf/ bpf/
 COPY --from=proto_base /src/ .
 
-RUN GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -o kubedtn github.com/y-young/kube-dtn/plugin 
+RUN GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -o kubedtn plugin 
 RUN GOOS=${TARGETOS} CGO_ENABLED=1 GOARCH=${TARGETARCH} go build -ldflags="-s -w" -o kubedtnd daemon/main.go; 
 
 
