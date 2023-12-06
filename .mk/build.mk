@@ -17,7 +17,6 @@ cni-docker:
 	--platform "${ARCHS}" \
 	--tag ${CNI_IMG}:${COMMIT} \
 	-f docker/Dockerfile.cni \
-	--no-cache \
 	.
 
 cni-push:

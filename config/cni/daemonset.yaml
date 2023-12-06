@@ -36,6 +36,7 @@ spec:
           command: ["./entrypoint.sh"]
           resources:
             limits:
+              cpu: 10000m
               memory: 10G
             requests:
               cpu: 200m
