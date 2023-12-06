@@ -7,7 +7,7 @@ cni-manifests: manifests kustomize
 .PHONY: cni-deploy
 ## Deploy CNI plugin into cluster
 cni-deploy: manifests kustomize
-	cd config/cni && $(KUSTOMIZE) edit set image ${CNI_IMG}:${COMMIT}
+	cd config/cni && $(KUSTOMIZE) edit set image kubedtn=${CNI_IMG}
 	$(KUSTOMIZE) build config/cni | kubectl apply -f -
 
 .PHONY: cni-undeploy
