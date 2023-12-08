@@ -22,6 +22,8 @@ items:
       peer_intf: eth1
       local_ip: 13.13.13.1/24
       peer_ip: 13.13.13.3/24
+      properties:
+        rate: 20Mbit
 - apiVersion: y-young.github.io/v1
   kind: Topology
   metadata:
@@ -56,6 +58,8 @@ items:
       peer_intf: eth2
       local_ip: 13.13.13.3/24
       peer_ip: 13.13.13.1/24
+      properties:
+        rate: 50Mbit
     - uid: 3
       peer_pod: r2
       local_intf: eth2
@@ -71,7 +75,6 @@ items:
     labels:
       test: bandwidth
   spec:
-    nodeName: ubuntu
     containers: 
     - name: iperf
       args: ["-s"]
@@ -83,7 +86,6 @@ items:
     labels:
       test: bandwidth
   spec:
-    nodeName: ubuntu
     containers:
     - name: iperf
       args: ["-s"]
@@ -95,7 +97,6 @@ items:
     labels:
       test: bandwidth
   spec: 
-    nodeName: worker
     containers: 
     - name: iperf
       args: ["-s"]
