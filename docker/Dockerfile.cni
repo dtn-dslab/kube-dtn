@@ -35,7 +35,8 @@ RUN sed -i "s|http://deb.debian.org/debian|http://mirror.sjtu.edu.cn/debian|g" /
 WORKDIR /go/src
 
 COPY go.mod go.sum ./
-ENV GOPROXY=https://proxy.golang.com.cn,direct
+ENV GO111MODULE=on
+ENV GOPROXY=https://goproxy.cn,direct
 RUN go mod download
 
 COPY bpf/ .
