@@ -79,7 +79,7 @@ COPY common/ common/
 COPY bpf/ bpf/
 COPY --from=proto_base /src/ .
 
-RUN GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -o kubedtn plugin 
+RUN GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -o kubedtn github.com/y-young/kube-dtn/plugin 
 RUN GOOS=${TARGETOS} CGO_ENABLED=1 GOARCH=${TARGETARCH} go build -ldflags="-s -w" -o kubedtnd daemon/main.go; 
 
 
