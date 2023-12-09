@@ -18,7 +18,9 @@ package controllers
 
 import (
 	"context"
+	"fmt"
 	"reflect"
+	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -57,7 +59,9 @@ type TopologyReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.13.0/pkg/reconcile
 func (r *TopologyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	start := time.Now()
 	log := log.FromContext(ctx)
+	behavior := false
 
 	var topology v1.Topology
 	if err := r.Get(ctx, req.NamespacedName, &topology); err != nil {
@@ -75,28 +79,47 @@ func (r *TopologyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	if topology.Status.Links == nil {
-		log.Info("Topology created")
+		behavior = true
+		// log.Info("Topology created")
 		// Saw topology for the first time, assume all links in spec have been set up,
 		// we'll copy initial links to status later
 	} else {
+		behavior = false
 		add, del, propertiesChanged := r.CalcDiff(topology.Status.Links, topology.Spec.Links)
-		log.Info("Topology changed", "add", add, "del", del, "update", propertiesChanged)
+		// log.Info("Topology changed", "add", add, "del", del, "update", propertiesChanged)
+
+		del_start := time.Now()
 
 		if err := r.DelLinks(ctx, &topology, del); err != nil {
 			log.Error(err, "Failed to delete links")
 			return ctrl.Result{}, err
 		}
 
+		del_elapsed := time.Since(del_start)
+		fmt.Printf("%s: Topology %s del links: %d ms\n", time.Now(), topology.Name, del_elapsed.Milliseconds())
+
+		add_start := time.Now()
+
 		if err := r.AddLinks(ctx, &topology, add); err != nil {
 			log.Error(err, "Failed to add links")
 			return ctrl.Result{}, err
 		}
 
+		add_elapsed := time.Since(add_start)
+		fmt.Printf("%s: Topology %s add links: %d ms\n", time.Now(), topology.Name, add_elapsed.Milliseconds())
+
+		err_start := time.Now()
+
 		if err := r.UpdateLinks(ctx, &topology, propertiesChanged); err != nil {
 			log.Error(err, "Failed to update links")
 			return ctrl.Result{}, err
 		}
+
+		err_elapsed := time.Since(err_start)
+		fmt.Printf("%s: Topology %s update links: %d ms\n", time.Now(), topology.Name, err_elapsed.Milliseconds())
 	}
+
+	retry_start := time.Now()
 
 	// Since kubedtn CNI will also update the status, retry on conflict
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
@@ -114,9 +137,19 @@ func (r *TopologyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return r.Status().Update(ctx, &topology)
 	})
 
+	retry_elapsed := time.Since(retry_start)
+	fmt.Printf("%s: Topology %s retry: %d ms\n", time.Now(), topology.Name, retry_elapsed.Milliseconds())
+
 	if err != nil {
 		log.Error(err, "Failed to update status")
 		return ctrl.Result{}, err
+	}
+
+	elapsed := time.Since(start)
+	if behavior {
+		fmt.Printf("%s: Topology %s created total time: %d ms\n", time.Now(), topology.Name, elapsed.Milliseconds())
+	} else {
+		fmt.Printf("%s: Topology %s changed total time: %d ms\n", time.Now(), topology.Name, elapsed.Milliseconds())
 	}
 
 	return ctrl.Result{}, nil
@@ -129,12 +162,20 @@ func (r *TopologyReconciler) AddLinks(ctx context.Context, topology *v1.Topology
 
 	log := log.FromContext(ctx)
 
+	// conn_start := time.Now()
+
 	conn, err := ConnectDaemon(ctx, topology.Status.SrcIP)
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
+
+	// conn_elapsed := time.Since(conn_start)
+	// fmt.Printf("%s: Topology %s connect daemon: %d ms\n", time.Now(), topology.Name, conn_elapsed.Milliseconds())
+
 	kubedtnClient := pb.NewLocalClient(conn)
+
+	// request_start := time.Now()
 
 	result, err := kubedtnClient.AddLinks(ctx, &pb.LinksBatchQuery{
 		LocalPod: &pb.Pod{
@@ -145,11 +186,15 @@ func (r *TopologyReconciler) AddLinks(ctx context.Context, topology *v1.Topology
 		},
 		Links: common.Map(links, func(link v1.Link) *pb.Link { return link.ToProto() }),
 	})
+
+	// request_elapsed := time.Since(request_start)
+	// fmt.Printf("%s: Topology %s request: %d ms\n", time.Now(), topology.Name, request_elapsed.Milliseconds())
+
 	if err != nil || !result.GetResponse() {
 		log.Error(err, "Failed to add links")
 		return err
 	}
-	log.Info("Successfully added links", "links", common.Map(links, func(link v1.Link) int { return link.UID }))
+	// log.Info("Successfully added links", "links", common.Map(links, func(link v1.Link) int { return link.UID }))
 	return nil
 }
 
@@ -160,12 +205,20 @@ func (r *TopologyReconciler) DelLinks(ctx context.Context, topology *v1.Topology
 
 	log := log.FromContext(ctx)
 
+	// conn_start := time.Now()
+
 	conn, err := ConnectDaemon(ctx, topology.Status.SrcIP)
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
+
+	// conn_elapsed := time.Since(conn_start)
+	// fmt.Printf("%s: Topology %s connect daemon: %d ms\n", time.Now(), topology.Name, conn_elapsed.Milliseconds())
+
 	kubedtnClient := pb.NewLocalClient(conn)
+
+	// request_start := time.Now()
 
 	result, err := kubedtnClient.DelLinks(ctx, &pb.LinksBatchQuery{
 		LocalPod: &pb.Pod{
@@ -176,11 +229,15 @@ func (r *TopologyReconciler) DelLinks(ctx context.Context, topology *v1.Topology
 		},
 		Links: common.Map(links, func(link v1.Link) *pb.Link { return link.ToProto() }),
 	})
+
+	// request_elapsed := time.Since(request_start)
+	// fmt.Printf("%s: Topology %s request: %d ms\n", time.Now(), topology.Name, request_elapsed.Milliseconds())
+
 	if err != nil || !result.GetResponse() {
 		log.Error(err, "Failed to delete links")
 		return err
 	}
-	log.Info("Successfully deleted links", "links", common.Map(links, func(link v1.Link) int { return link.UID }))
+	// log.Info("Successfully deleted links", "links", common.Map(links, func(link v1.Link) int { return link.UID }))
 	return nil
 }
 
@@ -191,12 +248,20 @@ func (r *TopologyReconciler) UpdateLinks(ctx context.Context, topology *v1.Topol
 
 	log := log.FromContext(ctx)
 
+	// conn_start := time.Now()
+
 	conn, err := ConnectDaemon(ctx, topology.Status.SrcIP)
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
+
+	// conn_elapsed := time.Since(conn_start)
+	// fmt.Printf("%s: Topology %s connect daemon: %d ms\n", time.Now(), topology.Name, conn_elapsed.Milliseconds())
+
 	kubedtnClient := pb.NewLocalClient(conn)
+
+	// request_start := time.Now()
 
 	result, err := kubedtnClient.UpdateLinks(ctx, &pb.LinksBatchQuery{
 		LocalPod: &pb.Pod{
@@ -207,11 +272,15 @@ func (r *TopologyReconciler) UpdateLinks(ctx context.Context, topology *v1.Topol
 		},
 		Links: common.Map(links, func(link v1.Link) *pb.Link { return link.ToProto() }),
 	})
+
+	// request_elapsed := time.Since(request_start)
+	// fmt.Printf("%s: Topology %s request: %d ms\n", time.Now(), topology.Name, request_elapsed.Milliseconds())
+
 	if err != nil || !result.GetResponse() {
 		log.Error(err, "Failed to delete link")
 		return err
 	}
-	log.Info("Successfully updated links", "links", common.Map(links, func(link v1.Link) int { return link.UID }))
+	// log.Info("Successfully updated links", "links", common.Map(links, func(link v1.Link) int { return link.UID }))
 	return err
 }
 
@@ -264,7 +333,7 @@ func (r *TopologyReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1.Topology{}).
 		WithOptions(controller.Options{
-			MaxConcurrentReconciles: 16,
+			MaxConcurrentReconciles: 32,
 		}).
 		Complete(r)
 }

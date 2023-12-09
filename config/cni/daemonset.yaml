@@ -39,8 +39,8 @@ spec:
               cpu: 10000m
               memory: 10G
             requests:
-              cpu: 200m
-              memory: 1G
+              cpu: 2000m
+              memory: 8G
           env:
             - name: HOST_IP
               valueFrom:

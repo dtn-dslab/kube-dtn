@@ -340,7 +340,7 @@ spec:
           value: VXLAN
         - name: TCPIP_BYPASS
           value: "1"
-        image: y-young/kubedtn:latest
+        image: registry.cn-hangzhou.aliyuncs.com/reins/kubedtn:88c05b6-dirty
         imagePullPolicy: IfNotPresent
         name: kubedtn
         ports:
@@ -353,8 +353,8 @@ spec:
             cpu: 10000m
             memory: 10G
           requests:
-            cpu: 200m
-            memory: 1G
+            cpu: 2000m
+            memory: 8G
         securityContext:
           privileged: true
         volumeMounts:

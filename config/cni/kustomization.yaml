@@ -4,6 +4,8 @@ namespace: kubedtn
 images:
 - name: kubedtn
   newName: registry.cn-hangzhou.aliyuncs.com/reins/kubedtn
+- name: registry.cn-hangzhou.aliyuncs.com/reins/kubedtn
+  newTag: 88c05b6-dirty
 resources:
 - namespace.yaml
 - serviceaccount.yaml
