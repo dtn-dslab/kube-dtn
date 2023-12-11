@@ -169,9 +169,12 @@ func (m *KubeDTN) Update(ctx context.Context, pod *pb.RemotePod) (*pb.BoolRespon
 		SrcIntf:  m.vxlanIntf,
 	}
 
+	mutex_start := time.Now()
 	mutex := m.linkMutexes.Get(uid)
 	mutex.Lock()
 	defer mutex.Unlock()
+	mutex_elapsed := time.Since(mutex_start)
+	m.latencyHistograms.Observe("remoteUpdate_mutex", mutex_elapsed.Milliseconds())
 
 	// Check if there's a vxlan link with the same VNI but in different namespace
 	netns := m.vxlanManager.Get(pod.Vni)
@@ -383,20 +386,21 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 		return err
 	}
 
-	isAlive := peerPod.SrcIp != "" && peerPod.NetNs != ""
-	logger.Infof("Is peer pod %s alive?: %t", peerPod.Name, isAlive)
-
-	if !isAlive {
-		// This means that our peer pod hasn't come up yet
-		// Since there's no way of telling if our peer is going to be on this host or another,
-		// the only option is to do nothing, assuming that the peer POD will do all the plumbing when it comes up
-		logger.Infof("Peer pod %s isn't alive yet, continuing", peerPod.Name)
-		return nil
-	}
-
 	// This means we're coming up AFTER our peer so things are pretty easy
-	logger.Infof("Peer pod %s is alive", peerPod.Name)
+
 	if peerPod.SrcIp == localPod.SrcIp { // This means we're on the same host
+
+		isAlive := peerPod.SrcIp != "" && peerPod.NetNs != ""
+		logger.Infof("Is peer pod %s alive?: %t", peerPod.Name, isAlive)
+		if !isAlive {
+			// This means that our peer pod hasn't come up yet
+			// Since there's no way of telling if our peer is going to be on this host or another,
+			// the only option is to do nothing, assuming that the peer POD will do all the plumbing when it comes up
+			logger.Infof("Peer pod %s isn't alive yet, continuing", peerPod.Name)
+			return nil
+		}
+		logger.Infof("Peer pod %s is alive", peerPod.Name)
+
 		logger.Infof("%s and %s are on the same host", localPod.Name, peerPod.Name)
 		// Creating koko's Veth struct for peer intf
 		peerVeth, err := common.MakeVeth(ctx, peerPod.NetNs, link.PeerIntf, link.PeerIp, link.PeerMac)
@@ -405,9 +409,12 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 			return err
 		}
 
+		mutex_start := time.Now()
 		mutex := m.linkMutexes.Get(link.Uid)
 		mutex.Lock()
 		defer mutex.Unlock()
+		mutex_elapsed := time.Since(mutex_start)
+		m.latencyHistograms.Observe("add_mutex_same_host", mutex_elapsed.Milliseconds())
 
 		err = common.SetupVeth(ctx, myVeth, peerVeth, link, localPod)
 		if err != nil {
@@ -416,6 +423,9 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 			logger.Infof("PEER VETH STRUCT: %+v", spew.Sdump(peerVeth))
 			return err
 		}
+		elapsed := time.Since(startTime)
+		m.latencyHistograms.Observe("add_veth", elapsed.Milliseconds())
+		logger.Infof("Successfully added veth link in %v", elapsed)
 	} else { // This means we're on different hosts
 		logger.Infof("%s@%s and %s@%s are on different hosts", localPod.Name, localPod.SrcIp, peerPod.Name, peerPod.SrcIp)
 
@@ -429,12 +439,15 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 			SrcIntf:  m.vxlanIntf,
 		}
 
-		mutex := m.linkMutexes.Get(link.Uid)
-		mutex.Lock()
+		// mutex_start := time.Now()
+		// mutex := m.linkMutexes.Get(link.Uid)
+		// mutex.Lock()
+		// mutex_elapsed := time.Since(mutex_start)
+		// m.latencyHistograms.Observe("add_mutex_diff_host", mutex_elapsed.Milliseconds())
 
 		if err = vxlan.SetupVxLan(ctx, vxlanSpec, link.Properties); err != nil {
 			logger.Infof("Error when setting up VXLAN interface with koko: %s", err)
-			mutex.Unlock()
+			// mutex.Unlock()
 			return err
 		}
 		m.vxlanManager.Add(vxlanSpec.Vni, &vxlanSpec.NetNs)
@@ -443,18 +456,18 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 		// If we and remote daemon are both in `addLink` and called `UpdateRemote` simultaneously,
 		// we will both be waiting forever since `Update` cannot acquire the lock
 		// while `addLink` is holding it.
-		mutex.Unlock()
+		// mutex.Unlock()
 		// Now we need to make an API call to update the remote VTEP to point to us
-		err = common.UpdateRemote(ctx, localPod, peerPod, link)
-		if err != nil {
-			return err
-		}
+		// err = common.UpdateRemote(ctx, localPod, peerPod, link)
+		// if err != nil {
+		// 	return err
+		// }
 		logger.Infof("Successfully updated remote daemon")
+		elapsed := time.Since(startTime)
+		m.latencyHistograms.Observe("add_vxlan", elapsed.Milliseconds())
+		logger.Infof("Successfully added vxlan link in %v", elapsed)
 	}
 
-	elapsed := time.Since(startTime)
-	m.latencyHistograms.Observe("add", elapsed.Milliseconds())
-	logger.Infof("Successfully added link in %v", elapsed)
 	return nil
 }
 

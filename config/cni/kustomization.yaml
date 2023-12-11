@@ -4,7 +4,7 @@ namespace: kubedtn
 images:
 - name: kubedtn
   newName: registry.cn-hangzhou.aliyuncs.com/reins/kubedtn
-  newTag: b174fd8-dirty
+  newTag: 73cc86e-dirty
 resources:
 - namespace.yaml
 - serviceaccount.yaml

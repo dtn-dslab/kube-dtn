@@ -53,7 +53,7 @@ type KubeDTN struct {
 	topologyManager   *metrics.TopologyManager
 	vxlanManager      *vxlan.VxlanManager
 	latencyHistograms *metrics.LatencyHistograms
-	linkMutexes       *common.MutexMap
+	linkMutexes       common.MutexMap
 	// IP of the node on which the daemon is running.
 	nodeIP string
 	// VXLAN interface name.
@@ -152,7 +152,7 @@ func New(cfg Config, topologyManager *metrics.TopologyManager, latencyHistograms
 		topologyManager:   topologyManager,
 		vxlanManager:      vxlanManager,
 		latencyHistograms: latencyHistograms,
-		linkMutexes:       &common.MutexMap{},
+		linkMutexes:       common.NewMutexMap(),
 		nodeIP:            nodeIP,
 		vxlanIntf:         vxlanIntf,
 	}

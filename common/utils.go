@@ -3,8 +3,10 @@ package common
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"sync"
 
+	cmap "github.com/orcaman/concurrent-map/v2"
 	pb "github.com/y-young/kube-dtn/proto/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -18,11 +20,22 @@ func Map[T, U any](ts []T, f func(T) U) []U {
 	return us
 }
 
-type MutexMap sync.Map
+type MutexMap cmap.ConcurrentMap[string, *sync.Mutex]
 
-func (m *MutexMap) Get(key any) *sync.Mutex {
-	mutex, _ := (*sync.Map)(m).LoadOrStore(key, &sync.Mutex{})
-	return mutex.(*sync.Mutex)
+func NewMutexMap() MutexMap {
+	return (MutexMap)(cmap.New[*sync.Mutex]())
+}
+
+func (m *MutexMap) Get(key int64) *sync.Mutex {
+	// loadOrStore
+	mutex, res := (*cmap.ConcurrentMap[string, *sync.Mutex])(m).Get(strconv.Itoa(int(key)))
+
+	if !res {
+		mutex = &sync.Mutex{}
+		(*cmap.ConcurrentMap[string, *sync.Mutex])(m).Set(strconv.Itoa(int(key)), mutex)
+	}
+
+	return mutex
 }
 
 // Generate VXLAN Vni from link UID
