@@ -63,6 +63,7 @@ items:
       labels:
         test: 3node
     spec:
+      nodeName: node4.dtn.lab
       containers:
         - image: alpine
           name: pod
@@ -74,6 +75,7 @@ items:
       labels:
         test: 3node
     spec:
+      nodeName: node5.dtn.lab
       containers:
         - image: alpine
           name: pod
@@ -85,6 +87,7 @@ items:
       labels:
         test: 3node
     spec:
+      nodeName: node5.dtn.lab
       containers:
         - image: alpine
           name: pod

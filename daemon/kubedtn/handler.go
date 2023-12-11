@@ -177,22 +177,22 @@ func (m *KubeDTN) Update(ctx context.Context, pod *pb.RemotePod) (*pb.BoolRespon
 	m.latencyHistograms.Observe("remoteUpdate_mutex", mutex_elapsed.Milliseconds())
 
 	// Check if there's a vxlan link with the same VNI but in different namespace
-	netns := m.vxlanManager.Get(pod.Vni)
+	// netns := m.vxlanManager.Get(pod.Vni)
 	// Ensure link is in different namespace since we might have set it up locally
-	if netns != nil && *netns != pod.NetNs {
-		logger.Infof("VXLAN with the same VNI already exists, removing it")
-		err = vxlan.RemoveLinkWithVni(ctx, pod.Vni, *netns)
-		if err != nil {
-			logger.Errorf("Failed to remove existing VXLAN link: %v", err)
-		}
-	}
+	// if netns != nil && *netns != pod.NetNs {
+	// 	logger.Infof("VXLAN with the same VNI already exists, removing it")
+	// 	err = vxlan.RemoveLinkWithVni(ctx, pod.Vni, *netns)
+	// 	if err != nil {
+	// 		logger.Errorf("Failed to remove existing VXLAN link: %v", err)
+	// 	}
+	// }
 
 	err = vxlan.SetupVxLan(ctx, vxlanSpec, pod.Properties)
 	if err != nil {
 		logger.Errorf("Failed to handle remote update: %v", err)
 		return &pb.BoolResponse{Response: false}, err
 	}
-	m.vxlanManager.Add(pod.Vni, &pod.NetNs)
+	// m.vxlanManager.Add(pod.Vni, &pod.NetNs)
 
 	elapsed := time.Since(startTime)
 	m.latencyHistograms.Observe("remoteUpdate", elapsed.Milliseconds())
@@ -450,7 +450,7 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 			// mutex.Unlock()
 			return err
 		}
-		m.vxlanManager.Add(vxlanSpec.Vni, &vxlanSpec.NetNs)
+		// m.vxlanManager.Add(vxlanSpec.Vni, &vxlanSpec.NetNs)
 
 		// Unlock in advance to avoid deadlock
 		// If we and remote daemon are both in `addLink` and called `UpdateRemote` simultaneously,
@@ -492,11 +492,11 @@ func (m *KubeDTN) delLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 		logger.Infof("Failed to remove veth link: %s", err)
 	}
 
-	vni := common.GetVniFromUid(link.Uid)
-	netns := m.vxlanManager.Get(vni)
-	if netns != nil && *netns == localPod.NetNs {
-		m.vxlanManager.Delete(vni)
-	}
+	// vni := common.GetVniFromUid(link.Uid)
+	// netns := m.vxlanManager.Get(vni)
+	// if netns != nil && *netns == localPod.NetNs {
+	// 	m.vxlanManager.Delete(vni)
+	// }
 
 	elapsed := time.Since(startTime)
 	m.latencyHistograms.Observe("del", elapsed.Milliseconds())

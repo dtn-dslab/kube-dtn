@@ -13,6 +13,7 @@ import (
 	"github.com/y-young/kube-dtn/daemon/grpcwire"
 	"github.com/y-young/kube-dtn/daemon/kubedtn"
 	"github.com/y-young/kube-dtn/daemon/metrics"
+	"google.golang.org/grpc"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -92,6 +93,7 @@ func main() {
 	m, err := kubedtn.New(kubedtn.Config{
 		Port:        grpcPort,
 		TCPIPBypass: tcpIpBypass,
+		GRPCOpts:    []grpc.ServerOption{grpc.MaxConcurrentStreams(1000)},
 	}, topologyManager, latencyHistograms)
 	if err != nil {
 		log.Errorf("Failed to create kubedtn: %v", err)
