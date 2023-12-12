@@ -2,6 +2,7 @@ package kubedtn
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"strings"
@@ -134,7 +135,11 @@ func (m *KubeDTN) SetAlive(ctx context.Context, pod *pb.Pod) (*pb.BoolResponse, 
 	topology.Status.SrcIP = pod.SrcIp
 	topology.Status.NetNs = pod.NetNs
 
-	err = m.redis.Set(m.ctx, "cni_"+topology.Name, topology.Status, time.Hour*240).Err()
+	topo_json, err := json.Marshal(topology.Status)
+	if err != nil {
+		log.Error(err, "Failed to marshal topology status")
+	}
+	err = m.redis.Set(m.ctx, "cni_"+topology.Name, topo_json, time.Hour*240).Err()
 	if err != nil {
 		logger.Errorf("Failed to update pod alive status: %v", err)
 	}

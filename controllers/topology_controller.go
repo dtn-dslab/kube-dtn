@@ -76,8 +76,10 @@ func (r *TopologyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 	cacheTopologyJSON, err := r.Redis.Get(r.Ctx, "cni_"+topology.Name).Result()
-	if err = json.Unmarshal([]byte(cacheTopologyJSON), &topology.Status); err != nil {
-		log.Error(err, "Failed to unmarshal topology status from redis")
+	if err != redis.Nil {
+		if err = json.Unmarshal([]byte(cacheTopologyJSON), &topology.Status); err != nil {
+			log.Error(err, "Failed to unmarshal topology status from redis")
+		}
 	}
 
 	// Spec remains the same, nothing to do
@@ -152,8 +154,12 @@ func (r *TopologyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		}
 	}
 	newTopology.Status.Links = newTopology.Spec.Links
+	topo_json, err := json.Marshal(newTopology.Status)
+	if err != nil {
+		log.Error(err, "Failed to marshal topology status")
+	}
 
-	err := r.Redis.Set(r.Ctx, "cni_"+newTopology.Name, newTopology.Status, time.Hour*240).Err()
+	err = r.Redis.Set(r.Ctx, "cni_"+newTopology.Name, topo_json, time.Hour*240).Err()
 	if err != nil {
 		log.Error(err, "Failed to set topology status to redis")
 	}
