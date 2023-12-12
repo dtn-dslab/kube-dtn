@@ -154,6 +154,8 @@ func (r *TopologyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		}
 	}
 	newTopology.Status.Links = newTopology.Spec.Links
+	newTopology.Status.SrcIP = topology.Status.SrcIP
+	newTopology.Status.NetNs = topology.Status.NetNs
 	topo_json, err := json.Marshal(newTopology.Status)
 	if err != nil {
 		log.Error(err, "Failed to marshal topology status")
