@@ -368,6 +368,7 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 	startTime := time.Now()
 
 	// Build koko's veth struct for local intf
+	logger.Infof("localPod.NetNs: %s", localPod.NetNs)
 	myVeth, err := common.MakeVeth(ctx, localPod.NetNs, link.LocalIntf, link.LocalIp, link.LocalMac)
 	if err != nil {
 		return err
@@ -427,6 +428,13 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 		return err
 	}
 
+	peer_topo_json, err := m.redis.Get(m.ctx, "cni_"+link.PeerPod).Result()
+	if err != redis.Nil {
+		if err = json.Unmarshal([]byte(peer_topo_json), &peerTopology.Status); err != nil {
+			log.Error(err, "Failed to unmarshal topology status from redis")
+		}
+	}
+
 	// This means we're coming up AFTER our peer so things are pretty easy
 
 	if peerPod.SrcIp == localPod.SrcIp { // This means we're on the same host
@@ -444,7 +452,8 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 
 		logger.Infof("%s and %s are on the same host", localPod.Name, peerPod.Name)
 		// Creating koko's Veth struct for peer intf
-		peerVeth, err := common.MakeVeth(ctx, peerPod.NetNs, link.PeerIntf, link.PeerIp, link.PeerMac)
+		logger.Infof("peerPod.NetNs: %s", peerTopology.Status.NetNs)
+		peerVeth, err := common.MakeVeth(ctx, peerTopology.Status.NetNs, link.PeerIntf, link.PeerIp, link.PeerMac)
 		if err != nil {
 			logger.Errorf("Failed to build koko Veth struct")
 			return err
