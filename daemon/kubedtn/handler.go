@@ -434,6 +434,8 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 			log.Error(err, "Failed to unmarshal topology status from redis")
 		}
 	}
+	peerPod.NetNs = peerTopology.Status.NetNs
+	peerPod.SrcIp = peerTopology.Status.SrcIP
 
 	// This means we're coming up AFTER our peer so things are pretty easy
 
@@ -453,7 +455,7 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 		logger.Infof("%s and %s are on the same host", localPod.Name, peerPod.Name)
 		// Creating koko's Veth struct for peer intf
 		logger.Infof("peerPod.NetNs: %s", peerTopology.Status.NetNs)
-		peerVeth, err := common.MakeVeth(ctx, peerTopology.Status.NetNs, link.PeerIntf, link.PeerIp, link.PeerMac)
+		peerVeth, err := common.MakeVeth(ctx, peerPod.NetNs, link.PeerIntf, link.PeerIp, link.PeerMac)
 		if err != nil {
 			logger.Errorf("Failed to build koko Veth struct")
 			return err
