@@ -136,13 +136,30 @@ func (m *KubeDTN) SetAlive(ctx context.Context, pod *pb.Pod) (*pb.BoolResponse, 
 	topology.Status.SrcIP = pod.SrcIp
 	topology.Status.NetNs = pod.NetNs
 
-	topo_json, err := json.Marshal(topology.Status)
-	if err != nil {
-		log.Error(err, "Failed to marshal topology status")
-	}
-	err = m.redis.Set(m.ctx, "cni_"+topology.Name, topo_json, time.Hour*240).Err()
-	if err != nil {
-		logger.Errorf("Failed to update pod alive status: %v", err)
+	if alive {
+		topo_json, err := json.Marshal(topology.Status)
+		if err != nil {
+			log.Error(err, "Failed to marshal topology status")
+		}
+		err = m.redis.Set(m.ctx, "cni_"+topology.Name, topo_json, time.Hour*240).Err()
+		if err != nil {
+			logger.Errorf("Failed to update pod alive status: %v", err)
+		}
+	} else {
+		topo_get_status := &v1.TopologyStatus{}
+		topo_get_json, err := m.redis.Get(m.ctx, "cni_"+pod.Name).Result()
+		if err != redis.Nil {
+			if err = json.Unmarshal([]byte(topo_get_json), &topo_get_status); err != nil {
+				log.Error(err, "Failed to unmarshal topology status from redis")
+			}
+		}
+		pod.NetNs = topo_get_status.NetNs
+		pod.SrcIp = topo_get_status.SrcIP
+
+		err = m.redis.Del(m.ctx, "cni_"+pod.Name).Err()
+		if err != nil {
+			logger.Errorf("Failed to delete pod alive status: %v", err)
+		}
 	}
 
 	// UpdateStatus can only update the status field, but we need to update metadata
@@ -516,7 +533,7 @@ func (m *KubeDTN) delLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 	}
 
 	// Creating koko's Veth struct for local intf
-	myVeth, err := common.MakeVeth(ctx, status.NetNs, link.LocalIntf, link.LocalIp, link.LocalMac)
+	myVeth, err := common.MakeVeth(ctx, localPod.NetNs, link.LocalIntf, link.LocalIp, link.LocalMac)
 	if err != nil {
 		logger.Infof("Failed to construct koko Veth struct")
 		return err
