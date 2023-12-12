@@ -70,17 +70,22 @@ func (r *TopologyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	if err := r.Get(ctx, req.NamespacedName, &topology); err != nil {
 		if apierrors.IsNotFound(err) {
 			log.Info("Topology deleted")
+			r.Redis.Del(r.Ctx, "cni_"+topology.Name+"_spec")
 		} else {
 			log.Error(err, "Unable to fetch Topology")
 		}
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
-	cacheTopologyJSON, err := r.Redis.Get(r.Ctx, "cni_"+topology.Name).Result()
+
+	oldTopoSpec := &common.RedisTopologySpec{}
+	oldTopoSpecJSON, err := r.Redis.Get(r.Ctx, "cni_"+topology.Name+"_spec").Result()
 	if err != redis.Nil {
-		if err = json.Unmarshal([]byte(cacheTopologyJSON), &topology.Status); err != nil {
+		if err = json.Unmarshal([]byte(oldTopoSpecJSON), &oldTopoSpec); err != nil {
 			log.Error(err, "Failed to unmarshal topology status from redis")
 		}
 	}
+
+	topology.Status.Links = oldTopoSpec.Links
 
 	// Spec remains the same, nothing to do
 	if reflect.DeepEqual(topology.Status.Links, topology.Spec.Links) {
@@ -130,21 +135,6 @@ func (r *TopologyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	retry_start := time.Now()
 
-	// Since kubedtn CNI will also update the status, retry on conflict
-	// err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-	// 	var topology v1.Topology
-	// 	if err := r.Get(ctx, req.NamespacedName, &topology); err != nil {
-	// 		if apierrors.IsNotFound(err) {
-	// 			log.Info("Topology deleted")
-	// 		} else {
-	// 			log.Error(err, "Unable to fetch Topology")
-	// 		}
-	// 		return client.IgnoreNotFound(err)
-	// 	}
-
-	// 	topology.Status.Links = topology.Spec.Links
-	// 	return r.Status().Update(ctx, &topology)
-	// })
 	var newTopology v1.Topology
 	if err := r.Get(ctx, req.NamespacedName, &newTopology); err != nil {
 		if apierrors.IsNotFound(err) {
@@ -153,17 +143,18 @@ func (r *TopologyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			log.Error(err, "Unable to fetch Topology")
 		}
 	}
-	newTopology.Status.Links = newTopology.Spec.Links
-	newTopology.Status.SrcIP = topology.Status.SrcIP
-	newTopology.Status.NetNs = topology.Status.NetNs
-	topo_json, err := json.Marshal(newTopology.Status)
+
+	redisTopoSpec := &common.RedisTopologySpec{
+		Links: newTopology.Spec.Links,
+	}
+	specJSON, err := json.Marshal(redisTopoSpec)
 	if err != nil {
 		log.Error(err, "Failed to marshal topology status")
 	}
 
-	err = r.Redis.Set(r.Ctx, "cni_"+newTopology.Name, topo_json, time.Hour*240).Err()
+	err = r.Redis.Set(r.Ctx, "cni_"+newTopology.Name+"_spec", specJSON, time.Hour*240).Err()
 	if err != nil {
-		log.Error(err, "Failed to set topology status to redis")
+		log.Error(err, "Failed to set topology spec to redis")
 	}
 
 	retry_elapsed := time.Since(retry_start)

@@ -100,29 +100,6 @@ func (m *KubeDTN) SetAlive(ctx context.Context, pod *pb.Pod) (*pb.BoolResponse, 
 	logger.Infof("Setting SrcIp=%s and NetNs=%s", pod.SrcIp, pod.NetNs)
 	alive := pod.SrcIp != "" && pod.NetNs != ""
 
-	// retryErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-	// 	topology, err := m.getPod(ctx, pod.Name, pod.KubeNs)
-	// 	if err != nil {
-	// 		logger.Errorf("Failed to read pod from K8s: %v", err)
-	// 		return err
-	// 	}
-
-	// 	if alive {
-	// 		m.topologyManager.Add(topology)
-	// 	} else {
-	// 		m.topologyManager.Delete(topology.Name, topology.Namespace)
-	// 	}
-	// 	topology.Status.SrcIP = pod.SrcIp
-	// 	topology.Status.NetNs = pod.NetNs
-
-	// 	return m.updateStatus(ctx, topology, pod.KubeNs)
-	// })
-
-	// if retryErr != nil {
-	// 	logger.Errorf("Failed to update pod alive status: %v", retryErr)
-	// 	return &pb.BoolResponse{Response: false}, retryErr
-	// }
-
 	topology, err := m.getPod(ctx, pod.Name, pod.KubeNs)
 	if err != nil {
 		logger.Errorf("Failed to read pod from K8s: %v", err)
@@ -133,30 +110,30 @@ func (m *KubeDTN) SetAlive(ctx context.Context, pod *pb.Pod) (*pb.BoolResponse, 
 	} else {
 		m.topologyManager.Delete(topology.Name, topology.Namespace)
 	}
-	topology.Status.SrcIP = pod.SrcIp
-	topology.Status.NetNs = pod.NetNs
 
+	redisTopoStatus := &common.RedisTopologyStatus{}
 	if alive {
-		topo_json, err := json.Marshal(topology.Status)
+		redisTopoStatus.NetNs = pod.NetNs
+		redisTopoStatus.SrcIP = pod.SrcIp
+		statusJSON, err := json.Marshal(redisTopoStatus)
 		if err != nil {
 			log.Error(err, "Failed to marshal topology status")
 		}
-		err = m.redis.Set(m.ctx, "cni_"+topology.Name, topo_json, time.Hour*240).Err()
+		err = m.redis.Set(m.ctx, "cni_"+topology.Name+"_status", statusJSON, time.Hour*240).Err()
 		if err != nil {
 			logger.Errorf("Failed to update pod alive status: %v", err)
 		}
 	} else {
-		topo_get_status := &v1.TopologyStatus{}
-		topo_get_json, err := m.redis.Get(m.ctx, "cni_"+pod.Name).Result()
+		statusJSON, err := m.redis.Get(m.ctx, "cni_"+pod.Name+"_status").Result()
 		if err != redis.Nil {
-			if err = json.Unmarshal([]byte(topo_get_json), &topo_get_status); err != nil {
+			if err = json.Unmarshal([]byte(statusJSON), &redisTopoStatus); err != nil {
 				log.Error(err, "Failed to unmarshal topology status from redis")
 			}
 		}
-		pod.NetNs = topo_get_status.NetNs
-		pod.SrcIp = topo_get_status.SrcIP
+		pod.NetNs = redisTopoStatus.NetNs
+		pod.SrcIp = redisTopoStatus.SrcIP
 
-		err = m.redis.Del(m.ctx, "cni_"+pod.Name).Err()
+		err = m.redis.Del(m.ctx, "cni_"+pod.Name+"_status").Err()
 		if err != nil {
 			logger.Errorf("Failed to delete pod alive status: %v", err)
 		}
