@@ -286,14 +286,12 @@ func (r *TopologyReconciler) UpdateLinks(ctx context.Context, topology *v1.Topol
 
 // Calculate difference between two old links and new links, returns a list of links to be added and a list of links to be deleted
 func (r *TopologyReconciler) CalcDiff(old []v1.Link, new []v1.Link) (add []v1.Link, del []v1.Link, propertiesChanged []v1.Link) {
+	// Remove links that are in old but not in new. These links' name are definitely different and need to be deleted obviously
 	for _, oldLink := range old {
 		found := false
 		for _, newLink := range new {
-			if EqualWithoutProperties(oldLink, newLink) {
+			if EqualWithLocalIntf(oldLink, newLink) {
 				found = true
-				if !reflect.DeepEqual(oldLink.Properties, newLink.Properties) {
-					propertiesChanged = append(propertiesChanged, newLink)
-				}
 				break
 			}
 		}
@@ -305,8 +303,13 @@ func (r *TopologyReconciler) CalcDiff(old []v1.Link, new []v1.Link) (add []v1.Li
 	for _, newLink := range new {
 		found := false
 		for _, oldLink := range old {
+			// If new link is not in old, we need to add it. While new link with different properties but same name will be deleted(not obviously) and added.
 			if EqualWithoutProperties(oldLink, newLink) {
 				found = true
+				// If properties are different, we need to update it.
+				if !reflect.DeepEqual(oldLink.Properties, newLink.Properties) {
+					propertiesChanged = append(propertiesChanged, newLink)
+				}
 				break
 			}
 		}
@@ -333,9 +336,13 @@ func (r *TopologyReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1.Topology{}).
 		WithOptions(controller.Options{
-			MaxConcurrentReconciles: 32,
+			MaxConcurrentReconciles: 256,
 		}).
 		Complete(r)
+}
+
+func EqualWithLocalIntf(a, b v1.Link) bool {
+	return a.LocalIntf == b.LocalIntf
 }
 
 // EqualWithoutProperties compares two links without comparing link properties

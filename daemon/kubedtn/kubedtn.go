@@ -30,6 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/apimachinery/pkg/watch"
 
+	"github.com/go-redis/redis/v8"
 	pb "github.com/y-young/kube-dtn/proto/v1"
 )
 
@@ -54,6 +55,8 @@ type KubeDTN struct {
 	vxlanManager      *vxlan.VxlanManager
 	latencyHistograms *metrics.LatencyHistograms
 	linkMutexes       common.MutexMap
+	redis             *redis.Client
+	ctx               context.Context
 	// IP of the node on which the daemon is running.
 	nodeIP string
 	// VXLAN interface name.
@@ -141,6 +144,12 @@ func New(cfg Config, topologyManager *metrics.TopologyManager, latencyHistograms
 
 	go controller.Run(wait.NeverStop)
 
+	redisClient := redis.NewClient(&redis.Options{
+		Addr:     "10.0.0.11:6379",
+		Password: "sail123456",
+		DB:       0,
+	})
+
 	m := &KubeDTN{
 		config:            cfg,
 		rCfg:              rCfg,
@@ -155,6 +164,8 @@ func New(cfg Config, topologyManager *metrics.TopologyManager, latencyHistograms
 		linkMutexes:       common.NewMutexMap(),
 		nodeIP:            nodeIP,
 		vxlanIntf:         vxlanIntf,
+		redis:             redisClient,
+		ctx:               context.Background(),
 	}
 	pb.RegisterLocalServer(m.s, m)
 	pb.RegisterRemoteServer(m.s, m)

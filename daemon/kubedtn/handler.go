@@ -98,31 +98,46 @@ func (m *KubeDTN) SetAlive(ctx context.Context, pod *pb.Pod) (*pb.BoolResponse, 
 	logger.Infof("Setting SrcIp=%s and NetNs=%s", pod.SrcIp, pod.NetNs)
 	alive := pod.SrcIp != "" && pod.NetNs != ""
 
-	retryErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		topology, err := m.getPod(ctx, pod.Name, pod.KubeNs)
-		if err != nil {
-			logger.Errorf("Failed to read pod from K8s: %v", err)
-			return err
-		}
+	// retryErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+	// 	topology, err := m.getPod(ctx, pod.Name, pod.KubeNs)
+	// 	if err != nil {
+	// 		logger.Errorf("Failed to read pod from K8s: %v", err)
+	// 		return err
+	// 	}
 
-		if alive {
-			m.topologyManager.Add(topology)
-		} else {
-			m.topologyManager.Delete(topology.Name, topology.Namespace)
-		}
-		topology.Status.SrcIP = pod.SrcIp
-		topology.Status.NetNs = pod.NetNs
+	// 	if alive {
+	// 		m.topologyManager.Add(topology)
+	// 	} else {
+	// 		m.topologyManager.Delete(topology.Name, topology.Namespace)
+	// 	}
+	// 	topology.Status.SrcIP = pod.SrcIp
+	// 	topology.Status.NetNs = pod.NetNs
 
-		return m.updateStatus(ctx, topology, pod.KubeNs)
-	})
+	// 	return m.updateStatus(ctx, topology, pod.KubeNs)
+	// })
 
-	if retryErr != nil {
-		logger.Errorf("Failed to update pod alive status: %v", retryErr)
-		return &pb.BoolResponse{Response: false}, retryErr
+	// if retryErr != nil {
+	// 	logger.Errorf("Failed to update pod alive status: %v", retryErr)
+	// 	return &pb.BoolResponse{Response: false}, retryErr
+	// }
+
+	topology, err := m.getPod(ctx, pod.Name, pod.KubeNs)
+	if err != nil {
+		logger.Errorf("Failed to read pod from K8s: %v", err)
 	}
 
+	if alive {
+		m.topologyManager.Add(topology)
+	} else {
+		m.topologyManager.Delete(topology.Name, topology.Namespace)
+	}
+	topology.Status.SrcIP = pod.SrcIp
+	topology.Status.NetNs = pod.NetNs
+
+	m.redis.Set(m.ctx, "cni_"+pod.Name, topology.Status, time.Hour*240)
+
 	// UpdateStatus can only update the status field, but we need to update metadata
-	retryErr = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+	retryErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		topology, err := m.getPod(ctx, pod.Name, pod.KubeNs)
 		if err != nil {
 			logger.Errorf("Failed to read pod from K8s: %v", err)
