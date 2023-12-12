@@ -360,7 +360,7 @@ func (r *TopologyReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1.Topology{}).
 		WithOptions(controller.Options{
-			MaxConcurrentReconciles: 256,
+			MaxConcurrentReconciles: 500,
 		}).
 		Complete(r)
 }
