@@ -18,18 +18,19 @@ package controllers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/go-redis/redis/v8"
 	v1 "github.com/y-young/kube-dtn/api/v1"
 	"github.com/y-young/kube-dtn/common"
 
@@ -43,6 +44,8 @@ import (
 type TopologyReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
+	Redis  *redis.Client
+	Ctx    context.Context
 }
 
 //+kubebuilder:rbac:groups=y-young.github.io,resources=topologies,verbs=get;list;watch;create;update;patch;delete
@@ -71,6 +74,10 @@ func (r *TopologyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			log.Error(err, "Unable to fetch Topology")
 		}
 		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
+	cacheTopologyJSON, err := r.Redis.Get(r.Ctx, "cni_"+topology.Name).Result()
+	if err = json.Unmarshal([]byte(cacheTopologyJSON), &topology.Status); err != nil {
+		log.Error(err, "Failed to unmarshal topology status from redis")
 	}
 
 	// Spec remains the same, nothing to do
@@ -122,28 +129,37 @@ func (r *TopologyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	retry_start := time.Now()
 
 	// Since kubedtn CNI will also update the status, retry on conflict
-	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		var topology v1.Topology
-		if err := r.Get(ctx, req.NamespacedName, &topology); err != nil {
-			if apierrors.IsNotFound(err) {
-				log.Info("Topology deleted")
-			} else {
-				log.Error(err, "Unable to fetch Topology")
-			}
-			return client.IgnoreNotFound(err)
-		}
+	// err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+	// 	var topology v1.Topology
+	// 	if err := r.Get(ctx, req.NamespacedName, &topology); err != nil {
+	// 		if apierrors.IsNotFound(err) {
+	// 			log.Info("Topology deleted")
+	// 		} else {
+	// 			log.Error(err, "Unable to fetch Topology")
+	// 		}
+	// 		return client.IgnoreNotFound(err)
+	// 	}
 
-		topology.Status.Links = topology.Spec.Links
-		return r.Status().Update(ctx, &topology)
-	})
+	// 	topology.Status.Links = topology.Spec.Links
+	// 	return r.Status().Update(ctx, &topology)
+	// })
+	var newTopology v1.Topology
+	if err := r.Get(ctx, req.NamespacedName, &newTopology); err != nil {
+		if apierrors.IsNotFound(err) {
+			log.Info("Topology deleted")
+		} else {
+			log.Error(err, "Unable to fetch Topology")
+		}
+	}
+	newTopology.Status.Links = newTopology.Spec.Links
+
+	err := r.Redis.Set(r.Ctx, "cni_"+newTopology.Name, newTopology.Status, time.Hour*240).Err()
+	if err != nil {
+		log.Error(err, "Failed to set topology status to redis")
+	}
 
 	retry_elapsed := time.Since(retry_start)
 	fmt.Printf("%s: Topology %s retry: %d ms\n", time.Now(), topology.Name, retry_elapsed.Milliseconds())
-
-	if err != nil {
-		log.Error(err, "Failed to update status")
-		return ctrl.Result{}, err
-	}
 
 	elapsed := time.Since(start)
 	if behavior {

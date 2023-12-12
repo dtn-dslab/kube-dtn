@@ -134,7 +134,10 @@ func (m *KubeDTN) SetAlive(ctx context.Context, pod *pb.Pod) (*pb.BoolResponse, 
 	topology.Status.SrcIP = pod.SrcIp
 	topology.Status.NetNs = pod.NetNs
 
-	m.redis.Set(m.ctx, "cni_"+pod.Name, topology.Status, time.Hour*240)
+	err = m.redis.Set(m.ctx, "cni_"+topology.Name, topology.Status, time.Hour*240).Err()
+	if err != nil {
+		logger.Errorf("Failed to update pod alive status: %v", err)
+	}
 
 	// UpdateStatus can only update the status field, but we need to update metadata
 	retryErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {

@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"flag"
 	"os"
 
@@ -32,6 +33,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
+	"github.com/go-redis/redis/v8"
 	yyounggithubiov1 "github.com/y-young/kube-dtn/api/v1"
 	"github.com/y-young/kube-dtn/controllers"
 	//+kubebuilder:scaffold:imports
@@ -101,9 +103,17 @@ func main() {
 		os.Exit(1)
 	}
 
+	redisClient := redis.NewClient(&redis.Options{
+		Addr:     "10.0.0.11:6379",
+		Password: "sail123456",
+		DB:       0,
+	})
+
 	if err = (&controllers.TopologyReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
+		Redis:  redisClient,
+		Ctx:    context.Background(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Topology")
 		os.Exit(1)
