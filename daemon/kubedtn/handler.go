@@ -532,17 +532,6 @@ func (m *KubeDTN) delLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 	logger.Infof("Deleting link: %v", link)
 	startTime := time.Now()
 
-	status := &v1.TopologyStatus{}
-
-	topologyJson, err := m.redis.Get(m.ctx, "cni_"+localPod.Name).Result()
-	if err != redis.Nil {
-		if err = json.Unmarshal([]byte(topologyJson), &status); err != nil {
-			log.Error(err, "Failed to unmarshal topology status from redis")
-		}
-	} else {
-		log.Error(err, "Failed to get topology status from redis")
-	}
-
 	// Creating koko's Veth struct for local intf
 	myVeth, err := common.MakeVeth(ctx, localPod.NetNs, link.LocalIntf, link.LocalIp, link.LocalMac)
 	if err != nil {
