@@ -84,8 +84,17 @@ func (r *TopologyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			log.Error(err, "Failed to unmarshal topology status from redis")
 		}
 	}
+	oldTopoStatus := &common.RedisTopologyStatus{}
+	oldTopoStatusJSON, err := r.Redis.Get(r.Ctx, "cni_"+topology.Name+"_status").Result()
+	if err != redis.Nil {
+		if err = json.Unmarshal([]byte(oldTopoStatusJSON), &oldTopoStatus); err != nil {
+			log.Error(err, "Failed to unmarshal topology status from redis")
+		}
+	}
 
 	topology.Status.Links = oldTopoSpec.Links
+	topology.Status.SrcIP = oldTopoStatus.SrcIP
+	topology.Status.NetNs = oldTopoStatus.NetNs
 
 	// Spec remains the same, nothing to do
 	if reflect.DeepEqual(topology.Status.Links, topology.Spec.Links) {
