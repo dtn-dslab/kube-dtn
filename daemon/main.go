@@ -93,7 +93,7 @@ func main() {
 	m, err := kubedtn.New(kubedtn.Config{
 		Port:        grpcPort,
 		TCPIPBypass: tcpIpBypass,
-		GRPCOpts:    []grpc.ServerOption{grpc.MaxConcurrentStreams(1000)},
+		GRPCOpts:    []grpc.ServerOption{grpc.MaxConcurrentStreams(100)},
 	}, topologyManager, latencyHistograms)
 	if err != nil {
 		log.Errorf("Failed to create kubedtn: %v", err)
