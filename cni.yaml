@@ -340,7 +340,7 @@ spec:
           value: VXLAN
         - name: TCPIP_BYPASS
           value: "1"
-        image: registry.cn-hangzhou.aliyuncs.com/reins/kubedtn:88c05b6-dirty
+        image: registry.cn-hangzhou.aliyuncs.com/reins/kubedtn:1a88c86-dirty
         imagePullPolicy: IfNotPresent
         name: kubedtn
         ports:
