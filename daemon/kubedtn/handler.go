@@ -18,7 +18,6 @@ import (
 	koko "github.com/redhat-nfvpe/koko/api"
 	log "github.com/sirupsen/logrus"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/util/retry"
 
 	"github.com/google/gopacket/pcap"
 	"github.com/y-young/kube-dtn/common"
@@ -141,26 +140,26 @@ func (m *KubeDTN) SetAlive(ctx context.Context, pod *pb.Pod) (*pb.BoolResponse, 
 	}
 
 	// UpdateStatus can only update the status field, but we need to update metadata
-	retryErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		topology, err := m.getPod(ctx, pod.Name, pod.KubeNs)
-		if err != nil {
-			logger.Errorf("Failed to read pod from K8s: %v", err)
-			return err
-		}
+	// retryErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+	// 	topology, err := m.getPod(ctx, pod.Name, pod.KubeNs)
+	// 	if err != nil {
+	// 		logger.Errorf("Failed to read pod from K8s: %v", err)
+	// 		return err
+	// 	}
 
-		if alive {
-			topology.Finalizers = append(topology.Finalizers, v1.GroupVersion.Identifier())
-		} else {
-			topology.Finalizers = []string{}
-		}
+	// 	if alive {
+	// 		topology.Finalizers = append(topology.Finalizers, v1.GroupVersion.Identifier())
+	// 	} else {
+	// 		topology.Finalizers = []string{}
+	// 	}
 
-		_, err = m.tClient.Topology(pod.KubeNs).Update(ctx, topology, metav1.UpdateOptions{})
-		return err
-	})
+	// 	_, err = m.tClient.Topology(pod.KubeNs).Update(ctx, topology, metav1.UpdateOptions{})
+	// 	return err
+	// })
 
-	if retryErr != nil {
-		logger.Errorf("Failed to set finalizer: %v", retryErr)
-	}
+	// if retryErr != nil {
+	// 	logger.Errorf("Failed to set finalizer: %v", retryErr)
+	// }
 
 	return &pb.BoolResponse{Response: true}, nil
 }
