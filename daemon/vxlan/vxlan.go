@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"strconv"
 	"strings"
 
 	"github.com/containernetworking/plugins/pkg/ns"
@@ -98,34 +97,34 @@ func CreateOrUpdate(ctx context.Context, v *VxlanSpec) (*koko.VEth, error) {
 	logger.Infof("Created koko vxlan struct %+v", vxlan)
 
 	// Try to read interface attributes from netlink
-	link := getLinkFromNS(ctx, veth.NsName, veth.LinkName)
-	logger.Infof("Retrieved %s link from %s Netns: %+v", veth.LinkName, veth.NsName, link)
+	// link := getLinkFromNS(ctx, veth.NsName, veth.LinkName)
+	// logger.Infof("Retrieved %s link from %s Netns: %+v", veth.LinkName, veth.NsName, link)
 
 	// Check if interface already exists
-	vxlanLink, isVxlan := link.(*netlink.Vxlan)
-	logger.Infof("Is link %s a VXLAN?: %s", veth.LinkName, strconv.FormatBool(isVxlan))
-	if isVxlan { // the link we've found is a vxlan link
-		if vxlanEqual(vxlanLink, vxlan) { // If Vxlan attrs are the same, nothing to do
-			logger.Infof("Vxlan attrs are the same")
-			return &veth, nil
-		}
+	// vxlanLink, isVxlan := link.(*netlink.Vxlan)
+	// logger.Infof("Is link %s a VXLAN?: %s", veth.LinkName, strconv.FormatBool(isVxlan))
+	// if isVxlan { // the link we've found is a vxlan link
+	// 	if vxlanEqual(vxlanLink, vxlan) { // If Vxlan attrs are the same, nothing to do
+	// 		logger.Infof("Vxlan attrs are the same")
+	// 		return &veth, nil
+	// 	}
 
-		// If Vxlan attrs are different
-		// We remove the existing link and add a new one
-		logger.Infof("Vxlan attrs are different: %d!=%d or %v!=%v", vxlanLink.VxlanId, vxlan.ID, vxlanLink.Group, vxlan.IPAddr)
-		if err = veth.RemoveVethLink(); err != nil {
-			return nil, fmt.Errorf("error when removing an old Vxlan interface with koko: %s", err)
-		}
-	} else { // the link we've found isn't a vxlan or doesn't exist
-		logger.Infof("Link %+v we've found isn't a vxlan or doesn't exist", link)
-		// If link exists but wasn't matched as vxlan, we need to delete it
-		if link != nil {
-			logger.Infof("Attempting to remove link %+v", veth)
-			if err = veth.RemoveVethLink(); err != nil {
-				return nil, fmt.Errorf("error when removing an old non-Vxlan interface with koko: %s", err)
-			}
-		}
-	}
+	// 	// If Vxlan attrs are different
+	// 	// We remove the existing link and add a new one
+	// 	logger.Infof("Vxlan attrs are different: %d!=%d or %v!=%v", vxlanLink.VxlanId, vxlan.ID, vxlanLink.Group, vxlan.IPAddr)
+	// 	if err = veth.RemoveVethLink(); err != nil {
+	// 		return nil, fmt.Errorf("error when removing an old Vxlan interface with koko: %s", err)
+	// 	}
+	// } else { // the link we've found isn't a vxlan or doesn't exist
+	// 	logger.Infof("Link %+v we've found isn't a vxlan or doesn't exist", link)
+	// 	// If link exists but wasn't matched as vxlan, we need to delete it
+	// 	if link != nil {
+	// 		logger.Infof("Attempting to remove link %+v", veth)
+	// 		if err = veth.RemoveVethLink(); err != nil {
+	// 			return nil, fmt.Errorf("error when removing an old non-Vxlan interface with koko: %s", err)
+	// 		}
+	// 	}
+	// }
 
 	logger.Infof("Creating a VXLAN link: %v; inside pod: %v", vxlan, veth)
 	if err = koko.MakeVxLan(veth, vxlan); err != nil {

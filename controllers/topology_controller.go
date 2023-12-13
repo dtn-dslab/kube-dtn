@@ -109,7 +109,7 @@ func (r *TopologyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	} else {
 		behavior = false
 		add, del, propertiesChanged := r.CalcDiff(topology.Status.Links, topology.Spec.Links)
-		// log.Info("Topology changed", "add", add, "del", del, "update", propertiesChanged)
+		log.Info("Topology changed", "add", add, "del", del, "update", propertiesChanged)
 
 		del_start := time.Now()
 
