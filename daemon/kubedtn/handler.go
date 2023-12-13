@@ -111,7 +111,10 @@ func (m *KubeDTN) SetAlive(ctx context.Context, pod *pb.Pod) (*pb.BoolResponse, 
 		m.topologyManager.Delete(topology.Name, topology.Namespace)
 	}
 
-	redisTopoStatus := &common.RedisTopologyStatus{}
+	redisTopoStatus := &common.RedisTopologyStatus{
+		NetNs: "",
+		SrcIP: "",
+	}
 	if alive {
 		redisTopoStatus.NetNs = pod.NetNs
 		redisTopoStatus.SrcIP = pod.SrcIp
@@ -128,6 +131,7 @@ func (m *KubeDTN) SetAlive(ctx context.Context, pod *pb.Pod) (*pb.BoolResponse, 
 		if err != redis.Nil {
 			if err = json.Unmarshal([]byte(statusJSON), &redisTopoStatus); err != nil {
 				log.Error(err, "Failed to unmarshal topology status from redis")
+				return &pb.BoolResponse{Response: false}, err
 			}
 		}
 		pod.NetNs = redisTopoStatus.NetNs
@@ -624,7 +628,7 @@ func (m *KubeDTN) DestroyPod(ctx context.Context, pod *pb.PodQuery) (*pb.BoolRes
 	localPod.SrcIp = ""
 	_, err = m.SetAlive(ctx, localPod)
 	if err != nil {
-		return &pb.BoolResponse{Response: false}, fmt.Errorf("could not set alive status: %v", err)
+		return &pb.BoolResponse{Response: true}, nil
 	}
 
 	response, err := m.DelLinks(ctx, &pb.LinksBatchQuery{
