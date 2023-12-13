@@ -8,6 +8,7 @@ import (
 func RemoveVethLink(nsName string, linkName string) error {
 	var vethNS ns.NetNS
 	var link netlink.Link
+
 	link.Attrs().Name = linkName
 	vethNS, err := ns.GetNS(nsName)
 	if err != nil {

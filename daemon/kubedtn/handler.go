@@ -10,7 +10,6 @@ import (
 
 	"github.com/go-redis/redis"
 	v1 "github.com/y-young/kube-dtn/api/v1"
-	fastlink "github.com/y-young/kube-dtn/daemon/fastlink"
 	"github.com/y-young/kube-dtn/daemon/grpcwire"
 	"github.com/y-young/kube-dtn/daemon/vxlan"
 
@@ -480,15 +479,15 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 		// mutex.Lock()
 		// mutex_elapsed := time.Since(mutex_start)
 		// m.latencyHistograms.Observe("add_mutex_diff_host", mutex_elapsed.Milliseconds())
-		// go func() {
+		go func() {
 
-		if err = vxlan.SetupVxLan(ctx, vxlanSpec, link.Properties); err != nil {
-			logger.Infof("Error when setting up VXLAN interface with koko: %s", err)
-		}
-		elapsed := time.Since(startTime)
-		m.latencyHistograms.Observe("add_vxlan", elapsed.Milliseconds())
-		logger.Infof("Successfully added vxlan link in %v", elapsed)
-		// }()
+			if err = vxlan.SetupVxLan(ctx, vxlanSpec, link.Properties); err != nil {
+				logger.Infof("Error when setting up VXLAN interface with koko: %s", err)
+			}
+			elapsed := time.Since(startTime)
+			m.latencyHistograms.Observe("add_vxlan", elapsed.Milliseconds())
+			logger.Infof("Successfully added vxlan link in %v", elapsed)
+		}()
 		// m.vxlanManager.Add(vxlanSpec.Vni, &vxlanSpec.NetNs)
 
 		// Unlock in advance to avoid deadlock
@@ -517,27 +516,27 @@ func (m *KubeDTN) delLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 	startTime := time.Now()
 
 	// Creating koko's Veth struct for local intf
-	// myVeth, err := common.MakeVeth(ctx, localPod.NetNs, link.LocalIntf, link.LocalIp, link.LocalMac)
-	// if err != nil {
-	// 	logger.Infof("Failed to construct koko Veth struct")
-	// 	return err
-	// }
-
-	// API call to koko to remove local Veth link
-	// go func() {
-	// if err = myVeth.RemoveVethLink(); err != nil {
-	// 	// instead of failing, just log the error and move on
-	// 	logger.Infof("Failed to remove veth link: %s", err)
-	// }
-
-	if err := fastlink.RemoveVethLink(localPod.NetNs, link.LocalIntf); err != nil {
-		logger.Infof("Failed to remove veth link: %s", err)
+	myVeth, err := common.MakeVeth(ctx, localPod.NetNs, link.LocalIntf, link.LocalIp, link.LocalMac)
+	if err != nil {
+		logger.Infof("Failed to construct koko Veth struct")
+		return err
 	}
 
-	elapsed := time.Since(startTime)
-	m.latencyHistograms.Observe("del", elapsed.Milliseconds())
-	logger.Infof("Successfully deleted link in %v", elapsed)
-	// }()
+	// API call to koko to remove local Veth link
+	go func() {
+		if err = myVeth.RemoveVethLink(); err != nil {
+			// instead of failing, just log the error and move on
+			logger.Infof("Failed to remove veth link: %s", err)
+		}
+
+		// if err := fastlink.RemoveVethLink(localPod.NetNs, link.LocalIntf); err != nil {
+		// 	logger.Infof("Failed to remove veth link: %s", err)
+		// }
+
+		elapsed := time.Since(startTime)
+		m.latencyHistograms.Observe("del", elapsed.Milliseconds())
+		logger.Infof("Successfully deleted link in %v", elapsed)
+	}()
 
 	// vni := common.GetVniFromUid(link.Uid)
 	// netns := m.vxlanManager.Get(vni)

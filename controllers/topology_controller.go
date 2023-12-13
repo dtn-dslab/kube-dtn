@@ -109,37 +109,43 @@ func (r *TopologyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	} else {
 		behavior = false
 		add, del, propertiesChanged := r.CalcDiff(topology.Status.Links, topology.Spec.Links)
-		log.Info("Topology changed", "add", add, "del", del, "update", propertiesChanged)
+		// log.Info("Topology changed", "add", add, "del", del, "update", propertiesChanged)
 
-		del_start := time.Now()
+		go func() {
+			del_start := time.Now()
 
-		if err := r.DelLinks(ctx, &topology, del); err != nil {
-			log.Error(err, "Failed to delete links")
-			return ctrl.Result{}, err
-		}
+			if err := r.DelLinks(ctx, &topology, del); err != nil {
+				log.Error(err, "Failed to delete links")
+				// return ctrl.Result{}, err
+			}
 
-		del_elapsed := time.Since(del_start)
-		fmt.Printf("%s: Topology %s del links: %d ms\n", time.Now(), topology.Name, del_elapsed.Milliseconds())
+			del_elapsed := time.Since(del_start)
+			fmt.Printf("%s: Topology %s del links: %d ms\n", time.Now(), topology.Name, del_elapsed.Milliseconds())
+		}()
 
-		add_start := time.Now()
+		go func() {
+			add_start := time.Now()
 
-		if err := r.AddLinks(ctx, &topology, add); err != nil {
-			log.Error(err, "Failed to add links")
-			return ctrl.Result{}, err
-		}
+			if err := r.AddLinks(ctx, &topology, add); err != nil {
+				log.Error(err, "Failed to add links")
+				// return ctrl.Result{}, err
+			}
 
-		add_elapsed := time.Since(add_start)
-		fmt.Printf("%s: Topology %s add links: %d ms\n", time.Now(), topology.Name, add_elapsed.Milliseconds())
+			add_elapsed := time.Since(add_start)
+			fmt.Printf("%s: Topology %s add links: %d ms\n", time.Now(), topology.Name, add_elapsed.Milliseconds())
+		}()
 
-		err_start := time.Now()
+		go func() {
+			err_start := time.Now()
 
-		if err := r.UpdateLinks(ctx, &topology, propertiesChanged); err != nil {
-			log.Error(err, "Failed to update links")
-			return ctrl.Result{}, err
-		}
+			if err := r.UpdateLinks(ctx, &topology, propertiesChanged); err != nil {
+				log.Error(err, "Failed to update links")
+				// return ctrl.Result{}, err
+			}
 
-		err_elapsed := time.Since(err_start)
-		fmt.Printf("%s: Topology %s update links: %d ms\n", time.Now(), topology.Name, err_elapsed.Milliseconds())
+			err_elapsed := time.Since(err_start)
+			fmt.Printf("%s: Topology %s update links: %d ms\n", time.Now(), topology.Name, err_elapsed.Milliseconds())
+		}()
 	}
 
 	retry_start := time.Now()
