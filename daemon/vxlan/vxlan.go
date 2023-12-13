@@ -134,9 +134,11 @@ func CreateOrUpdate(ctx context.Context, v *VxlanSpec) (*koko.VEth, error) {
 			// Conflicting interface name or VNI will incur this error,
 			// since we've removed the old interface previously,
 			// it's likely that another link with the same VNI already exists, remove it and try again.
+			if e := veth.RemoveVethLink(); e != nil {
+				logger.Errorf("Failed to remove an old interface with koko: %s", err)
+			}
 			if e := RemoveLinkWithVni(ctx, v.Vni, veth.NsName); e != nil {
 				logger.Errorf("Failed to remove conflicting link with VNI %d: %s", vxlan.ID, err)
-				return nil, err
 			}
 			err = koko.MakeVxLan(veth, vxlan)
 		}

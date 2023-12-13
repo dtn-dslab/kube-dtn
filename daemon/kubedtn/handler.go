@@ -126,6 +126,7 @@ func (m *KubeDTN) SetAlive(ctx context.Context, pod *pb.Pod) (*pb.BoolResponse, 
 		if err != nil {
 			logger.Errorf("Failed to update pod alive status: %v", err)
 		}
+		logger.Infof("Successfully updated pod alive status")
 	} else {
 		statusJSON, err := m.redis.Get(m.ctx, "cni_"+pod.Name+"_status").Result()
 		if err != redis.Nil {
@@ -141,6 +142,7 @@ func (m *KubeDTN) SetAlive(ctx context.Context, pod *pb.Pod) (*pb.BoolResponse, 
 		if err != nil {
 			logger.Errorf("Failed to delete pod alive status: %v", err)
 		}
+		logger.Infof("Successfully deleted pod alive status")
 	}
 
 	// UpdateStatus can only update the status field, but we need to update metadata
@@ -554,14 +556,14 @@ func (m *KubeDTN) SetupPod(ctx context.Context, pod *pb.SetupPodQuery) (*pb.Bool
 		"action": "setup",
 	})
 	ctx = common.WithLogger(ctx, logger)
-	logger.Infof("Setting up pod")
+	logger.Infof("SetupPod: Setting up pod")
 
 	localPod, err := m.Get(ctx, &pb.PodQuery{
 		Name:   string(pod.Name),
 		KubeNs: string(pod.KubeNs),
 	})
 	if err != nil {
-		logger.Infof("Pod is not in topology returning. err: %v", err)
+		logger.Infof("SetupPod: Pod is not in topology returning. err: %v", err)
 		// Pod is not be in topology, the CNI plugin should delegate the action to the next plugin
 		return &pb.BoolResponse{Response: true}, nil
 	}
@@ -569,23 +571,30 @@ func (m *KubeDTN) SetupPod(ctx context.Context, pod *pb.SetupPodQuery) (*pb.Bool
 	// Marking pod as "alive" by setting its srcIP and NetNS
 	localPod.NetNs = pod.NetNs
 	localPod.SrcIp = m.nodeIP
-	logger.Infof("Setting pod alive status")
+	logger.Infof("SetupPod: Setting pod alive status")
 	ok, err := m.SetAlive(ctx, localPod)
 	if err != nil || !ok.Response {
-		logger.Infof("Failed to set pod alive status: %v", err)
+		logger.Infof("SetupPod: Failed to set pod alive status: %v", err)
 		return &pb.BoolResponse{Response: false}, err
 	}
+
+	// Cleanup any existing links
+	logger.Infof("SetupPod: Cleaning up existing links")
+	m.DelLinks(ctx, &pb.LinksBatchQuery{
+		LocalPod: localPod,
+		Links:    localPod.Links,
+	})
 
 	response, err := m.AddLinks(ctx, &pb.LinksBatchQuery{
 		LocalPod: localPod,
 		Links:    localPod.Links,
 	})
 	if err != nil || !response.Response {
-		logger.Infof("Failed to setup links: %v", err)
+		logger.Infof("SetupPod: Failed to setup links: %v", err)
 		return &pb.BoolResponse{Response: false}, err
 	}
 
-	logger.Infof("Successfully set up pod")
+	logger.Infof("SetupPod: Successfully set up pod")
 	return &pb.BoolResponse{Response: true}, nil
 }
 
@@ -597,7 +606,7 @@ func (m *KubeDTN) DestroyPod(ctx context.Context, pod *pb.PodQuery) (*pb.BoolRes
 		"action": "destroy",
 	})
 	ctx = common.WithLogger(ctx, logger)
-	logger.Infof("Destroying pod")
+	logger.Infof("DestroyPod: Destroying pod")
 
 	m.topologyManager.Delete(pod.Name, pod.KubeNs)
 	// Close the grpc tunnel for this pod netns (if any)
@@ -608,7 +617,7 @@ func (m *KubeDTN) DestroyPod(ctx context.Context, pod *pb.PodQuery) (*pb.BoolRes
 
 	removResp, err := m.RemGRPCWire(ctx, &wireDef)
 	if err != nil || !removResp.Response {
-		return &pb.BoolResponse{Response: false}, fmt.Errorf("could not remove grpc wire: %v", err)
+		return &pb.BoolResponse{Response: false}, fmt.Errorf("DestroyPod: could not remove grpc wire: %v", err)
 	}
 
 	localPod, err := m.Get(ctx, &pb.PodQuery{
@@ -616,13 +625,13 @@ func (m *KubeDTN) DestroyPod(ctx context.Context, pod *pb.PodQuery) (*pb.BoolRes
 		KubeNs: string(pod.KubeNs),
 	})
 	if err != nil {
-		logger.Infof("Pod is not in topology returning. err: %v", err)
+		logger.Infof("DestroyPod: Pod is not in topology returning. err: %v", err)
 		// Pod is not be in topology, the CNI plugin should delegate the action to the next plugin
 		// This is a special combination of return values
 		return &pb.BoolResponse{Response: false}, nil
 	}
 
-	logger.Infof("Topology data still exists in CRs, cleaning up its status")
+	logger.Infof("DestroyPod: Set the pod as dead")
 	// By setting srcIP and NetNS to "" we're marking this POD as dead
 	localPod.NetNs = ""
 	localPod.SrcIp = ""
@@ -636,11 +645,10 @@ func (m *KubeDTN) DestroyPod(ctx context.Context, pod *pb.PodQuery) (*pb.BoolRes
 		Links:    localPod.Links,
 	})
 	if err != nil || !response.Response {
-		logger.Infof("Failed to destroy links: %v", err)
-		return &pb.BoolResponse{Response: false}, err
+		logger.Infof("DestroyPod: Failed to cleanup all links: %v", err)
 	}
 
-	logger.Infof("Successfully destroyed pod")
+	logger.Infof("DestroyPod: Successfully destroyed pod")
 	return &pb.BoolResponse{Response: true}, nil
 }
 
@@ -666,6 +674,8 @@ func (m *KubeDTN) AddLinks(ctx context.Context, query *pb.LinksBatchQuery) (*pb.
 }
 
 func (m *KubeDTN) DelLinks(ctx context.Context, query *pb.LinksBatchQuery) (*pb.BoolResponse, error) {
+	var latest_err error
+
 	localPod := query.LocalPod
 	logger := logger.WithFields(log.Fields{
 		"pod":    localPod.Name,
@@ -674,16 +684,24 @@ func (m *KubeDTN) DelLinks(ctx context.Context, query *pb.LinksBatchQuery) (*pb.
 	})
 	ctx = common.WithLogger(ctx, logger)
 
+	logger.Infof("Deleting links in netns %s, ip %s", localPod.NetNs, localPod.SrcIp)
+
 	for _, link := range query.Links {
 		err := m.delLink(ctx, localPod, link)
 		if err != nil {
 			logger.WithField("link", link.Uid).Errorf("Failed to delete link: %v", err)
-			return &pb.BoolResponse{Response: false}, err
+			latest_err = err
 		}
 	}
 
-	logger.Infof("Successfully deleted links")
-	return &pb.BoolResponse{Response: true}, nil
+	if latest_err != nil {
+		log.Errorf("DelLinks: Failed to delete link")
+		return &pb.BoolResponse{Response: false}, latest_err
+	} else {
+		log.Infof("DelLinks: Successfully deleted links")
+		return &pb.BoolResponse{Response: true}, nil
+	}
+
 }
 
 func (m *KubeDTN) UpdateLinks(ctx context.Context, query *pb.LinksBatchQuery) (*pb.BoolResponse, error) {
