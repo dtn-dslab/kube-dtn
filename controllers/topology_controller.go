@@ -77,6 +77,7 @@ func (r *TopologyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	startTime := time.Now()
 	oldTopoSpec := &common.RedisTopologySpec{}
 	oldTopoSpecJSON, err := r.Redis.Get(r.Ctx, "cni_"+topology.Name+"_spec").Result()
 	if err != redis.Nil {
@@ -84,6 +85,10 @@ func (r *TopologyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			log.Error(err, "Failed to unmarshal topology status from redis")
 		}
 	}
+	elapsed := time.Since(startTime)
+	log.Info("Get topology spec from redis", "elapsed", elapsed.Milliseconds())
+
+	startTime = time.Now()
 	oldTopoStatus := &common.RedisTopologyStatus{}
 	oldTopoStatusJSON, err := r.Redis.Get(r.Ctx, "cni_"+topology.Name+"_status").Result()
 	if err != redis.Nil {
@@ -91,6 +96,8 @@ func (r *TopologyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			log.Error(err, "Failed to unmarshal topology status from redis")
 		}
 	}
+	elapsed = time.Since(startTime)
+	log.Info("Get topology status from redis", "elapsed", elapsed.Milliseconds())
 
 	topology.Status.Links = oldTopoSpec.Links
 	topology.Status.SrcIP = oldTopoStatus.SrcIP
@@ -148,34 +155,20 @@ func (r *TopologyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		}()
 	}
 
-	retry_start := time.Now()
-
-	var newTopology v1.Topology
-	if err := r.Get(ctx, req.NamespacedName, &newTopology); err != nil {
-		if apierrors.IsNotFound(err) {
-			log.Info("Topology deleted")
-		} else {
-			log.Error(err, "Unable to fetch Topology")
-		}
-	}
-
 	redisTopoSpec := &common.RedisTopologySpec{
-		Links: newTopology.Spec.Links,
+		Links: topology.Spec.Links,
 	}
 	specJSON, err := json.Marshal(redisTopoSpec)
 	if err != nil {
 		log.Error(err, "Failed to marshal topology status")
 	}
 
-	err = r.Redis.Set(r.Ctx, "cni_"+newTopology.Name+"_spec", specJSON, time.Hour*240).Err()
+	err = r.Redis.Set(r.Ctx, "cni_"+topology.Name+"_spec", specJSON, time.Hour*240).Err()
 	if err != nil {
 		log.Error(err, "Failed to set topology spec to redis")
 	}
 
-	retry_elapsed := time.Since(retry_start)
-	fmt.Printf("%s: Topology %s retry: %d ms\n", time.Now(), topology.Name, retry_elapsed.Milliseconds())
-
-	elapsed := time.Since(start)
+	elapsed = time.Since(start)
 	if behavior {
 		fmt.Printf("%s: Topology %s created total time: %d ms\n", time.Now(), topology.Name, elapsed.Milliseconds())
 	} else {
@@ -366,7 +359,7 @@ func (r *TopologyReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1.Topology{}).
 		WithOptions(controller.Options{
-			MaxConcurrentReconciles: 500,
+			MaxConcurrentReconciles: 3000,
 		}).
 		Complete(r)
 }

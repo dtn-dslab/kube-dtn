@@ -479,15 +479,15 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 		// mutex.Lock()
 		// mutex_elapsed := time.Since(mutex_start)
 		// m.latencyHistograms.Observe("add_mutex_diff_host", mutex_elapsed.Milliseconds())
-		go func() {
+		// go func() {
 
-			if err = vxlan.SetupVxLan(ctx, vxlanSpec, link.Properties); err != nil {
-				logger.Infof("Error when setting up VXLAN interface with koko: %s", err)
-			}
-			elapsed := time.Since(startTime)
-			m.latencyHistograms.Observe("add_vxlan", elapsed.Milliseconds())
-			logger.Infof("Successfully added vxlan link in %v", elapsed)
-		}()
+		if err = vxlan.SetupVxLan(ctx, vxlanSpec, link.Properties); err != nil {
+			logger.Infof("Error when setting up VXLAN interface with koko: %s", err)
+		}
+		elapsed := time.Since(startTime)
+		m.latencyHistograms.Observe("add_vxlan", elapsed.Milliseconds())
+		logger.Infof("Successfully added vxlan link in %v", elapsed)
+		// }()
 		// m.vxlanManager.Add(vxlanSpec.Vni, &vxlanSpec.NetNs)
 
 		// Unlock in advance to avoid deadlock
@@ -523,20 +523,20 @@ func (m *KubeDTN) delLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 	}
 
 	// API call to koko to remove local Veth link
-	go func() {
-		if err = myVeth.RemoveVethLink(); err != nil {
-			// instead of failing, just log the error and move on
-			logger.Infof("Failed to remove veth link: %s", err)
-		}
+	// go func() {
+	if err = myVeth.RemoveVethLink(); err != nil {
+		// instead of failing, just log the error and move on
+		logger.Infof("Failed to remove veth link: %s", err)
+	}
 
-		// if err := fastlink.RemoveVethLink(localPod.NetNs, link.LocalIntf); err != nil {
-		// 	logger.Infof("Failed to remove veth link: %s", err)
-		// }
+	// if err := fastlink.RemoveVethLink(localPod.NetNs, link.LocalIntf); err != nil {
+	// 	logger.Infof("Failed to remove veth link: %s", err)
+	// }
 
-		elapsed := time.Since(startTime)
-		m.latencyHistograms.Observe("del", elapsed.Milliseconds())
-		logger.Infof("Successfully deleted link in %v", elapsed)
-	}()
+	elapsed := time.Since(startTime)
+	m.latencyHistograms.Observe("del", elapsed.Milliseconds())
+	logger.Infof("Successfully deleted link in %v", elapsed)
+	// }()
 
 	// vni := common.GetVniFromUid(link.Uid)
 	// netns := m.vxlanManager.Get(vni)
@@ -661,11 +661,11 @@ func (m *KubeDTN) AddLinks(ctx context.Context, query *pb.LinksBatchQuery) (*pb.
 	ctx = common.WithLogger(ctx, logger)
 
 	for _, link := range query.Links {
-		err := m.addLink(ctx, localPod, link)
-		if err != nil {
-			logger.WithField("link", link.Uid).Errorf("Failed to add link: %v", err)
-			return &pb.BoolResponse{Response: false}, err
-		}
+		go m.addLink(ctx, localPod, link)
+		// if err != nil {
+		// 	logger.WithField("link", link.Uid).Errorf("Failed to add link: %v", err)
+		// 	return &pb.BoolResponse{Response: false}, err
+		// }
 	}
 
 	logger.Infof("Successfully added links")
@@ -686,11 +686,11 @@ func (m *KubeDTN) DelLinks(ctx context.Context, query *pb.LinksBatchQuery) (*pb.
 	logger.Infof("Deleting links in netns %s, ip %s", localPod.NetNs, localPod.SrcIp)
 
 	for _, link := range query.Links {
-		err := m.delLink(ctx, localPod, link)
-		if err != nil {
-			logger.WithField("link", link.Uid).Errorf("Failed to delete link: %v", err)
-			latest_err = err
-		}
+		go m.delLink(ctx, localPod, link)
+		// if err != nil {
+		// 	logger.WithField("link", link.Uid).Errorf("Failed to delete link: %v", err)
+		// 	latest_err = err
+		// }
 	}
 
 	if latest_err != nil {
