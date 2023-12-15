@@ -115,7 +115,7 @@ func (r *TopologyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		// we'll copy initial links to status later
 	} else {
 		behavior = false
-		add, del, propertiesChanged := r.CalcDiff(topology.Status.Links, topology.Spec.Links)
+		add, readd, del, propertiesChanged := r.CalcDiff(topology.Status.Links, topology.Spec.Links)
 		// log.Info("Topology changed", "add", add, "del", del, "update", propertiesChanged)
 
 		go func() {
@@ -133,13 +133,32 @@ func (r *TopologyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		go func() {
 			add_start := time.Now()
 
-			if err := r.AddLinks(ctx, &topology, add); err != nil {
+			pb_links := common.Map(add, func(link v1.Link) *pb.Link { return link.ToProto() })
+
+			if err := r.AddLinks(ctx, &topology, pb_links); err != nil {
 				log.Error(err, "Failed to add links")
 				// return ctrl.Result{}, err
 			}
 
 			add_elapsed := time.Since(add_start)
 			fmt.Printf("%s: Topology %s add links: %d ms\n", time.Now(), topology.Name, add_elapsed.Milliseconds())
+		}()
+
+		go func() {
+			readd_start := time.Now()
+
+			pb_links := common.Map(readd, func(link v1.Link) *pb.Link { return link.ToProto() })
+			for _, link := range pb_links {
+				link.Detect = true
+			}
+
+			if err := r.AddLinks(ctx, &topology, pb_links); err != nil {
+				log.Error(err, "Failed to readd links")
+				// return ctrl.Result{}, err
+			}
+
+			readd_elapsed := time.Since(readd_start)
+			fmt.Printf("%s: Topology %s readd links: %d ms\n", time.Now(), topology.Name, readd_elapsed.Milliseconds())
 		}()
 
 		go func() {
@@ -178,7 +197,7 @@ func (r *TopologyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	return ctrl.Result{}, nil
 }
 
-func (r *TopologyReconciler) AddLinks(ctx context.Context, topology *v1.Topology, links []v1.Link) error {
+func (r *TopologyReconciler) AddLinks(ctx context.Context, topology *v1.Topology, links []*pb.Link) error {
 	if len(links) == 0 {
 		return nil
 	}
@@ -207,7 +226,7 @@ func (r *TopologyReconciler) AddLinks(ctx context.Context, topology *v1.Topology
 			NetNs:  topology.Status.NetNs,
 			KubeNs: topology.Namespace,
 		},
-		Links: common.Map(links, func(link v1.Link) *pb.Link { return link.ToProto() }),
+		Links: links,
 	})
 
 	// request_elapsed := time.Since(request_start)
@@ -308,7 +327,7 @@ func (r *TopologyReconciler) UpdateLinks(ctx context.Context, topology *v1.Topol
 }
 
 // Calculate difference between two old links and new links, returns a list of links to be added and a list of links to be deleted
-func (r *TopologyReconciler) CalcDiff(old []v1.Link, new []v1.Link) (add []v1.Link, del []v1.Link, propertiesChanged []v1.Link) {
+func (r *TopologyReconciler) CalcDiff(old []v1.Link, new []v1.Link) (add []v1.Link, readd, del []v1.Link, propertiesChanged []v1.Link) {
 	// Remove links that are in old but not in new. These links' name are definitely different and need to be deleted obviously
 	for _, oldLink := range old {
 		found := false
@@ -332,6 +351,8 @@ func (r *TopologyReconciler) CalcDiff(old []v1.Link, new []v1.Link) (add []v1.Li
 				// If properties are different, we need to update it.
 				if !reflect.DeepEqual(oldLink.Properties, newLink.Properties) {
 					propertiesChanged = append(propertiesChanged, newLink)
+				} else {
+					readd = append(readd, newLink)
 				}
 				break
 			}

@@ -4,13 +4,14 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"strings"
+	"time"
 
 	"github.com/containernetworking/plugins/pkg/ns"
 	koko "github.com/redhat-nfvpe/koko/api"
 	log "github.com/sirupsen/logrus"
 	"github.com/vishvananda/netlink"
 	"github.com/y-young/kube-dtn/common"
+	"github.com/y-young/kube-dtn/daemon/metrics"
 	pb "github.com/y-young/kube-dtn/proto/v1"
 )
 
@@ -27,30 +28,38 @@ type VxlanSpec struct {
 }
 
 // Set up VXLAN link with qdiscs
-func SetupVxLan(ctx context.Context, v *VxlanSpec, properties *pb.LinkProperties) (err error) {
+func SetupVxLan(ctx context.Context, v *VxlanSpec, properties *pb.LinkProperties, m *metrics.LatencyHistograms, detect bool) (err error) {
 	logger := common.GetLogger(ctx)
 
+	start := time.Now()
 	var veth *koko.VEth
-	if veth, err = CreateOrUpdate(ctx, v); err != nil {
+	if veth, err = CreateOrUpdate(ctx, v, m, detect); err != nil {
 		logger.Errorf("Failed to setup VXLAN: %v", err)
 		return err
 	}
+	m.Observe("VXLANCreateOrUpdate", time.Since(start).Milliseconds())
 
+	start = time.Now()
 	qdiscs, err := common.MakeQdiscs(ctx, properties)
 	if err != nil {
 		logger.Errorf("Failed to construct qdiscs: %v", err)
 		return err
 	}
+	m.Observe("VXLANMakeQdiscs", time.Since(start).Milliseconds())
+
+	start = time.Now()
 	err = common.SetVethQdiscs(ctx, veth, qdiscs)
 	if err != nil {
 		logger.Errorf("Failed to set qdisc on self veth %s: %v", veth, err)
 		return err
 	}
+	m.Observe("VXLANSetVethQdiscs", time.Since(start).Milliseconds())
+
 	return nil
 }
 
 // CreateOrUpdate creates or updates the vxlan on the node.
-func CreateOrUpdate(ctx context.Context, v *VxlanSpec) (*koko.VEth, error) {
+func CreateOrUpdate(ctx context.Context, v *VxlanSpec, m *metrics.LatencyHistograms, detect bool) (*koko.VEth, error) {
 	logger := common.GetLogger(ctx)
 
 	var err error
@@ -61,7 +70,9 @@ func CreateOrUpdate(ctx context.Context, v *VxlanSpec) (*koko.VEth, error) {
 		if srcIP == "" {
 			srcIP, srcIntf, err = GetDefaultVxlanSource()
 		} else {
+			start := time.Now()
 			srcIP, srcIntf, err = GetVxlanSource(srcIP)
+			m.Observe("GetVxlanSource", time.Since(start).Milliseconds())
 		}
 		if err != nil {
 			return nil, err
@@ -127,22 +138,38 @@ func CreateOrUpdate(ctx context.Context, v *VxlanSpec) (*koko.VEth, error) {
 	// }
 
 	logger.Infof("Creating a VXLAN link: %v; inside pod: %v", vxlan, veth)
-	if err = koko.MakeVxLan(veth, vxlan); err != nil {
-		logger.Infof("Error when creating a Vxlan interface with koko: %s", err)
-		if strings.Contains(err.Error(), "file exists") {
-			logger.Infof("Trying to remove conflicting link with VNI %d", vxlan.ID)
-			// Conflicting interface name or VNI will incur this error,
-			// since we've removed the old interface previously,
-			// it's likely that another link with the same VNI already exists, remove it and try again.
-			if e := veth.RemoveVethLink(); e != nil {
-				logger.Errorf("Failed to remove an old interface with koko: %s", err)
-			}
-			if e := RemoveLinkWithVni(ctx, v.Vni, veth.NsName); e != nil {
-				logger.Errorf("Failed to remove conflicting link with VNI %d: %s", vxlan.ID, err)
-			}
-			err = koko.MakeVxLan(veth, vxlan)
+
+	if detect {
+		if e := veth.RemoveVethLink(); e != nil {
+			logger.Errorf("Failed to remove an old interface with koko: %s", err)
 		}
 	}
+
+	start := time.Now()
+	err = koko.MakeVxLan(veth, vxlan)
+	m.Observe("MakeVxLan", time.Since(start).Milliseconds())
+
+	// if err != nil {
+	// 	logger.Infof("Error when creating a Vxlan interface with koko: %s", err)
+	// 	if strings.Contains(err.Error(), "file exists") {
+	// 		logger.Infof("Trying to remove conflicting link with VNI %d", vxlan.ID)
+	// 		// Conflicting interface name or VNI will incur this error,
+	// 		// since we've removed the old interface previously,
+	// 		// it's likely that another link with the same VNI already exists, remove it and try again.
+	// 		start := time.Now()
+	// 		if e := veth.RemoveVethLink(); e != nil {
+	// 			logger.Errorf("Failed to remove an old interface with koko: %s", err)
+	// 		}
+	// 		if e := RemoveLinkWithVni(ctx, v.Vni, veth.NsName); e != nil {
+	// 			logger.Errorf("Failed to remove conflicting link with VNI %d: %s", vxlan.ID, err)
+	// 		}
+	// 		m.Observe("RemoveLinkWhenExists", time.Since(start).Milliseconds())
+
+	// 		start = time.Now()
+	// 		err = koko.MakeVxLan(veth, vxlan)
+	// 		m.Observe("MakeVxLanAgain", time.Since(start).Milliseconds())
+	// 	}
+	// }
 
 	if err != nil {
 		return nil, fmt.Errorf("error when creating a Vxlan interface with koko: %s", err)

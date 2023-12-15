@@ -105,6 +105,7 @@ func (l *Link) ToProto() *pb.Link {
 		PeerMac:    l.PeerMAC,
 		Uid:        int64(l.UID),
 		Properties: l.Properties.ToProto(),
+		Detect:     false,
 	}
 }
 

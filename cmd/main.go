@@ -1,14 +1,12 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"os"
 	"strings"
 
 	"github.com/goccy/go-yaml"
 	log "github.com/sirupsen/logrus"
-	"github.com/y-young/kube-dtn/common"
 	"github.com/y-young/kube-dtn/daemon/vxlan"
 	pb "github.com/y-young/kube-dtn/proto/v1"
 )
@@ -84,18 +82,18 @@ func main() {
 
 func addLink(link *pb.Link, srcIntf string, peerVtep string) error {
 	// We're connecting physical host interface, so use root network namespace
-	vxlanSpec := &vxlan.VxlanSpec{
-		NetNs: "",
-		// Link in configuration file is from pod's perspective, so we need to reverse it
-		IntfName: link.PeerIntf,
-		IntfIp:   link.PeerIp,
-		PeerVtep: peerVtep,
-		Vni:      common.GetVniFromUid(link.Uid),
-	}
-	ctx := context.WithValue(context.Background(), common.CtxKey("logger"), log.New())
-	if err := vxlan.SetupVxLan(ctx, vxlanSpec, link.Properties); err != nil {
-		log.Infof("Error when creating a Vxlan interface with koko: %s", err)
-		return err
-	}
+	// vxlanSpec := &vxlan.VxlanSpec{
+	// 	NetNs: "",
+	// 	// Link in configuration file is from pod's perspective, so we need to reverse it
+	// 	IntfName: link.PeerIntf,
+	// 	IntfIp:   link.PeerIp,
+	// 	PeerVtep: peerVtep,
+	// 	Vni:      common.GetVniFromUid(link.Uid),
+	// }
+	// ctx := context.WithValue(context.Background(), common.CtxKey("logger"), log.New())
+	// if err := vxlan.SetupVxLan(ctx, vxlanSpec, link.Properties); err != nil {
+	// 	log.Infof("Error when creating a Vxlan interface with koko: %s", err)
+	// 	return err
+	// }
 	return nil
 }

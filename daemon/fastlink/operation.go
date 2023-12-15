@@ -7,15 +7,14 @@ import (
 
 	"github.com/containernetworking/plugins/pkg/ns"
 	koko "github.com/redhat-nfvpe/koko/api"
-	log "github.com/sirupsen/logrus"
 	"github.com/vishvananda/netlink"
-	"github.com/y-young/kube-dtn/common"
+	"github.com/y-young/kube-dtn/daemon/metrics"
 )
 
-func RemoveVethLink(ctx context.Context, veth *koko.VEth) (err error) {
-	logger := common.GetLogger(ctx).WithFields(log.Fields{
-		"link": veth.LinkName,
-	})
+func RemoveVethLink(ctx context.Context, veth *koko.VEth, m *metrics.LatencyHistograms) (err error) {
+	// logger := common.GetLogger(ctx).WithFields(log.Fields{
+	// 	"link": veth.LinkName,
+	// })
 
 	var vethNs ns.NetNS
 	var link netlink.Link
@@ -32,9 +31,10 @@ func RemoveVethLink(ctx context.Context, veth *koko.VEth) (err error) {
 	}
 	defer vethNs.Close()
 	elapsed := time.Since(start)
-	logger.Infof("Dellink: GetNS took %s", elapsed)
+	// logger.Infof("Dellink: GetNS took %s", elapsed)
+	m.Observe("RemoveGetNS", elapsed.Milliseconds())
 
-	start = time.Now()
+	all_start := time.Now()
 	err = vethNs.Do(func(_ ns.NetNS) error {
 		start = time.Now()
 		if veth.MirrorIngress != "" {
@@ -52,7 +52,8 @@ func RemoveVethLink(ctx context.Context, veth *koko.VEth) (err error) {
 			}
 		}
 		elapsed = time.Since(start)
-		logger.Infof("Dellink: UnsetMirror took %s", elapsed)
+		// logger.Infof("Dellink: UnsetMirror took %s", elapsed)
+		m.Observe("RemoveUnsetMirror", elapsed.Milliseconds())
 
 		start = time.Now()
 		if link, err = netlink.LinkByName(veth.LinkName); err != nil {
@@ -60,7 +61,8 @@ func RemoveVethLink(ctx context.Context, veth *koko.VEth) (err error) {
 				veth.LinkName, vethNs.Path(), err)
 		}
 		elapsed = time.Since(start)
-		logger.Infof("Dellink: LinkByName took %s", elapsed)
+		// logger.Infof("Dellink: LinkByName took %s", elapsed)
+		m.Observe("RemoveLinkByName", elapsed.Milliseconds())
 
 		start = time.Now()
 		if err = netlink.LinkDel(link); err != nil {
@@ -68,11 +70,13 @@ func RemoveVethLink(ctx context.Context, veth *koko.VEth) (err error) {
 				veth.LinkName, vethNs.Path(), err)
 		}
 		elapsed = time.Since(start)
-		logger.Infof("Dellink: LinkDel took %s", elapsed)
+		// logger.Infof("Dellink: LinkDel took %s", elapsed)
+		m.Observe("RemoveLinkDel", elapsed.Milliseconds())
 		return nil
 	})
-	elapsed = time.Since(start)
-	logger.Infof("Dellink: Do took %s", elapsed)
+	elapsed = time.Since(all_start)
+	// logger.Infof("Dellink: Do took %s", elapsed)
+	m.Observe("RemoveTotal", elapsed.Milliseconds())
 
 	return err
 }

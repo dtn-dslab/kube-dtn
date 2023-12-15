@@ -170,59 +170,59 @@ func (m *KubeDTN) SetAlive(ctx context.Context, pod *pb.Pod) (*pb.BoolResponse, 
 	return &pb.BoolResponse{Response: true}, nil
 }
 
-func (m *KubeDTN) Update(ctx context.Context, pod *pb.RemotePod) (*pb.BoolResponse, error) {
-	uid := common.GetUidFromVni(pod.Vni)
-	logger := common.GetLogger(ctx).WithFields(log.Fields{
-		"pod":    pod.Name,
-		"ns":     pod.KubeNs,
-		"link":   uid,
-		"action": "remoteUpdate",
-	})
-	ctx = common.WithLogger(ctx, logger)
-	logger.Infof("Updating pod from remote")
-	startTime := time.Now()
+// func (m *KubeDTN) Update(ctx context.Context, pod *pb.RemotePod) (*pb.BoolResponse, error) {
+// 	uid := common.GetUidFromVni(pod.Vni)
+// 	logger := common.GetLogger(ctx).WithFields(log.Fields{
+// 		"pod":    pod.Name,
+// 		"ns":     pod.KubeNs,
+// 		"link":   uid,
+// 		"action": "remoteUpdate",
+// 	})
+// 	ctx = common.WithLogger(ctx, logger)
+// 	logger.Infof("Updating pod from remote")
+// 	startTime := time.Now()
 
-	var err error
-	vxlanSpec := &vxlan.VxlanSpec{
-		NetNs:    pod.NetNs,
-		IntfName: pod.IntfName,
-		IntfIp:   pod.IntfIp,
-		PeerVtep: pod.PeerVtep,
-		Vni:      pod.Vni,
-		SrcIp:    m.nodeIP,
-		SrcIntf:  m.vxlanIntf,
-	}
+// 	var err error
+// 	vxlanSpec := &vxlan.VxlanSpec{
+// 		NetNs:    pod.NetNs,
+// 		IntfName: pod.IntfName,
+// 		IntfIp:   pod.IntfIp,
+// 		PeerVtep: pod.PeerVtep,
+// 		Vni:      pod.Vni,
+// 		SrcIp:    m.nodeIP,
+// 		SrcIntf:  m.vxlanIntf,
+// 	}
 
-	mutex_start := time.Now()
-	mutex := m.linkMutexes.Get(uid)
-	mutex.Lock()
-	defer mutex.Unlock()
-	mutex_elapsed := time.Since(mutex_start)
-	m.latencyHistograms.Observe("remoteUpdate_mutex", mutex_elapsed.Milliseconds())
+// 	mutex_start := time.Now()
+// 	mutex := m.linkMutexes.Get(uid)
+// 	mutex.Lock()
+// 	defer mutex.Unlock()
+// 	mutex_elapsed := time.Since(mutex_start)
+// 	m.latencyHistograms.Observe("remoteUpdate_mutex", mutex_elapsed.Milliseconds())
 
-	// Check if there's a vxlan link with the same VNI but in different namespace
-	// netns := m.vxlanManager.Get(pod.Vni)
-	// Ensure link is in different namespace since we might have set it up locally
-	// if netns != nil && *netns != pod.NetNs {
-	// 	logger.Infof("VXLAN with the same VNI already exists, removing it")
-	// 	err = vxlan.RemoveLinkWithVni(ctx, pod.Vni, *netns)
-	// 	if err != nil {
-	// 		logger.Errorf("Failed to remove existing VXLAN link: %v", err)
-	// 	}
-	// }
+// 	// Check if there's a vxlan link with the same VNI but in different namespace
+// 	// netns := m.vxlanManager.Get(pod.Vni)
+// 	// Ensure link is in different namespace since we might have set it up locally
+// 	// if netns != nil && *netns != pod.NetNs {
+// 	// 	logger.Infof("VXLAN with the same VNI already exists, removing it")
+// 	// 	err = vxlan.RemoveLinkWithVni(ctx, pod.Vni, *netns)
+// 	// 	if err != nil {
+// 	// 		logger.Errorf("Failed to remove existing VXLAN link: %v", err)
+// 	// 	}
+// 	// }
 
-	err = vxlan.SetupVxLan(ctx, vxlanSpec, pod.Properties)
-	if err != nil {
-		logger.Errorf("Failed to handle remote update: %v", err)
-		return &pb.BoolResponse{Response: false}, err
-	}
-	// m.vxlanManager.Add(pod.Vni, &pod.NetNs)
+// 	err = vxlan.SetupVxLan(ctx, vxlanSpec, pod.Properties)
+// 	if err != nil {
+// 		logger.Errorf("Failed to handle remote update: %v", err)
+// 		return &pb.BoolResponse{Response: false}, err
+// 	}
+// 	// m.vxlanManager.Add(pod.Vni, &pod.NetNs)
 
-	elapsed := time.Since(startTime)
-	m.latencyHistograms.Observe("remoteUpdate", elapsed.Milliseconds())
-	logger.Infof("Successfully handled remote update in %v", elapsed)
-	return &pb.BoolResponse{Response: true}, nil
-}
+// 	elapsed := time.Since(startTime)
+// 	m.latencyHistograms.Observe("remoteUpdate", elapsed.Milliseconds())
+// 	logger.Infof("Successfully handled remote update in %v", elapsed)
+// 	return &pb.BoolResponse{Response: true}, nil
+// }
 
 // ------------------------------------------------------------------------------------------------------
 func (m *KubeDTN) RemGRPCWire(ctx context.Context, wireDef *pb.WireDef) (*pb.BoolResponse, error) {
@@ -400,15 +400,18 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 	// Initialising peer pod's metadata
 	// We need original topology object here so avoid another query
 	// to the API server in IsSkipped
-	peerTopology, err := m.getPod(ctx, link.PeerPod, localPod.KubeNs)
-	if err != nil {
-		logger.Errorf("Failed to retrieve peer pod %s/%s topology", localPod.KubeNs, link.PeerPod)
-		return err
-	}
-	peerPod, err := m.ToProtoPod(ctx, peerTopology)
-	if err != nil {
-		logger.Errorf("Failed to convert peer topology %s/%s to proto pod", localPod.KubeNs, link.PeerPod)
-		return err
+	// peerTopology, err := m.getPod(ctx, link.PeerPod, localPod.KubeNs)
+	// if err != nil {
+	// 	logger.Errorf("Failed to retrieve peer pod %s/%s topology", localPod.KubeNs, link.PeerPod)
+	// 	return err
+	// }
+	// peerPod, err := m.ToProtoPod(ctx, peerTopology)
+	// if err != nil {
+	// 	logger.Errorf("Failed to convert peer topology %s/%s to proto pod", localPod.KubeNs, link.PeerPod)
+	// 	return err
+	// }
+	peerPod := &pb.Pod{
+		Name: link.PeerPod,
 	}
 
 	redisTopoStatus := &common.RedisTopologyStatus{}
@@ -452,7 +455,7 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 		mutex_elapsed := time.Since(mutex_start)
 		m.latencyHistograms.Observe("add_mutex_same_host", mutex_elapsed.Milliseconds())
 
-		err = common.SetupVeth(ctx, myVeth, peerVeth, link, localPod)
+		err = common.SetupVeth(ctx, myVeth, peerVeth, link, localPod, m.latencyHistograms, link.Detect)
 		if err != nil {
 			logger.Errorf("Error when creating a new VEth pair with koko: %s", err)
 			logger.Infof("SELF VETH STRUCT: %+v", spew.Sdump(myVeth))
@@ -482,7 +485,7 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 		// m.latencyHistograms.Observe("add_mutex_diff_host", mutex_elapsed.Milliseconds())
 		// go func() {
 
-		if err = vxlan.SetupVxLan(ctx, vxlanSpec, link.Properties); err != nil {
+		if err = vxlan.SetupVxLan(ctx, vxlanSpec, link.Properties, m.latencyHistograms, link.Detect); err != nil {
 			logger.Infof("Error when setting up VXLAN interface with koko: %s", err)
 		}
 		elapsed := time.Since(startTime)
@@ -530,7 +533,7 @@ func (m *KubeDTN) delLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 	// 	logger.Infof("Failed to remove veth link: %s", err)
 	// }
 
-	if err := fastlink.RemoveVethLink(ctx, myVeth); err != nil {
+	if err := fastlink.RemoveVethLink(ctx, myVeth, m.latencyHistograms); err != nil {
 		logger.Infof("Failed to remove veth link: %s", err)
 	}
 
@@ -584,6 +587,10 @@ func (m *KubeDTN) SetupPod(ctx context.Context, pod *pb.SetupPodQuery) (*pb.Bool
 		LocalPod: localPod,
 		Links:    localPod.Links,
 	})
+
+	for _, link := range localPod.Links {
+		link.Detect = true
+	}
 
 	response, err := m.AddLinks(ctx, &pb.LinksBatchQuery{
 		LocalPod: localPod,

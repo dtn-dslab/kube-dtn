@@ -24,6 +24,7 @@ message Link {
   LinkProperties properties = 7;
   string local_mac = 8;
   string peer_mac = 9;
+  bool detect = 10;
 }
 
 message LinkProperties {
