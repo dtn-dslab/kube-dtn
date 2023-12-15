@@ -26,23 +26,23 @@ import (
 
 // var interNodeLinkType = common.INTER_NODE_LINK_VXLAN
 
-var redis_retry = 10
-
-func (m *KubeDTN) getTopoFromRedis(name string) (common.RedisTopologyStatus, error) {
+func (m *KubeDTN) getTopoFromRedis(name string, ns string) (common.RedisTopologyStatus, error) {
 	redisTopoStatus := &common.RedisTopologyStatus{}
 
-	for i := 0; i < redis_retry; i++ {
-		statusJSON, err := m.redis.Get(m.ctx, "cni_"+name+"_status").Result()
-		if err != redis.Nil {
-			if err = json.Unmarshal([]byte(statusJSON), redisTopoStatus); err != nil {
-				return *redisTopoStatus, err
+	statusJSON, err := m.redis.Get(m.ctx, "cni_"+name+"_status").Result()
+	if err != redis.Nil {
+		if err = json.Unmarshal([]byte(statusJSON), redisTopoStatus); err != nil {
+			pod, err := m.kClient.CoreV1().Pods(ns).Get(m.ctx, name, metav1.GetOptions{})
+			if err != nil {
+				return *redisTopoStatus, fmt.Errorf("failed to get pod %s from k8s", name)
 			}
+			redisTopoStatus.SrcIP = pod.Status.HostIP
 			return *redisTopoStatus, nil
 		}
-		time.Sleep(time.Millisecond * 200)
+		return *redisTopoStatus, nil
 	}
 
-	return *redisTopoStatus, fmt.Errorf("Failed to get pod %s status from redis", name)
+	return *redisTopoStatus, fmt.Errorf("failed to get pod %s status from redis", name)
 }
 
 func (m *KubeDTN) getPod(ctx context.Context, name, ns string) (*v1.Topology, error) {
@@ -147,7 +147,10 @@ func (m *KubeDTN) SetAlive(ctx context.Context, pod *pb.Pod) (*pb.BoolResponse, 
 		}
 		logger.Infof("Successfully updated pod alive status")
 	} else {
-		redisTopoStatus = m.getTopoFromRedis(pod.Name)
+		redisTopoStatus, err := m.getTopoFromRedis(pod.Name, pod.KubeNs)
+		if err != nil {
+			logger.Errorf("Failed to retrieve peer pod %s/%s topology", pod.KubeNs, pod.Name)
+		}
 		pod.NetNs = redisTopoStatus.NetNs
 		pod.SrcIp = redisTopoStatus.SrcIP
 
@@ -427,10 +430,11 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 		Name: link.PeerPod,
 	}
 
-	redisTopoStatus, err := m.getTopoFromRedis(link.PeerPod)
+	redisTopoStatus, err := m.getTopoFromRedis(link.PeerPod, localPod.KubeNs)
 
 	if err != nil {
 		logger.Errorf("Failed to retrieve peer pod %s/%s topology", localPod.KubeNs, link.PeerPod)
+	}
 
 	peerPod.NetNs = redisTopoStatus.NetNs
 	peerPod.SrcIp = redisTopoStatus.SrcIP
