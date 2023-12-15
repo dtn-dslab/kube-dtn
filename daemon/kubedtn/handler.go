@@ -582,11 +582,11 @@ func (m *KubeDTN) SetupPod(ctx context.Context, pod *pb.SetupPodQuery) (*pb.Bool
 	}
 
 	// Cleanup any existing links
-	logger.Infof("SetupPod: Cleaning up existing links")
-	m.DelLinks(ctx, &pb.LinksBatchQuery{
-		LocalPod: localPod,
-		Links:    localPod.Links,
-	})
+	// logger.Infof("SetupPod: Cleaning up existing links")
+	// m.DelLinks(ctx, &pb.LinksBatchQuery{
+	// 	LocalPod: localPod,
+	// 	Links:    localPod.Links,
+	// })
 
 	for _, link := range localPod.Links {
 		link.Detect = true

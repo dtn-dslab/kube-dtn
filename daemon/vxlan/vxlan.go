@@ -141,7 +141,7 @@ func CreateOrUpdate(ctx context.Context, v *VxlanSpec, m *metrics.LatencyHistogr
 
 	if detect {
 		if e := veth.RemoveVethLink(); e != nil {
-			logger.Errorf("Failed to remove an old interface with koko: %s", err)
+			logger.Errorf("Failed to remove an old interface with koko: %s", e)
 		}
 	}
 

@@ -19,7 +19,7 @@ func RemoveVethLink(ctx context.Context, veth *koko.VEth, m *metrics.LatencyHist
 	var vethNs ns.NetNS
 	var link netlink.Link
 
-	start := time.Now()
+	all_start := time.Now()
 	if veth.NsName == "" {
 		if vethNs, err = ns.GetCurrentNS(); err != nil {
 			return fmt.Errorf("%v", err)
@@ -30,13 +30,13 @@ func RemoveVethLink(ctx context.Context, veth *koko.VEth, m *metrics.LatencyHist
 		}
 	}
 	defer vethNs.Close()
-	elapsed := time.Since(start)
+	all_elapsed := time.Since(all_start)
 	// logger.Infof("Dellink: GetNS took %s", elapsed)
-	m.Observe("RemoveGetNS", elapsed.Milliseconds())
+	m.Observe("RemoveGetNS", all_elapsed.Milliseconds())
 
-	all_start := time.Now()
+	all_start = time.Now()
 	err = vethNs.Do(func(_ ns.NetNS) error {
-		start = time.Now()
+		start := time.Now()
 		if veth.MirrorIngress != "" {
 			if err = veth.UnsetIngressMirror(); err != nil {
 				return fmt.Errorf(
@@ -51,7 +51,7 @@ func RemoveVethLink(ctx context.Context, veth *koko.VEth, m *metrics.LatencyHist
 					err)
 			}
 		}
-		elapsed = time.Since(start)
+		elapsed := time.Since(start)
 		// logger.Infof("Dellink: UnsetMirror took %s", elapsed)
 		m.Observe("RemoveUnsetMirror", elapsed.Milliseconds())
 
@@ -74,9 +74,9 @@ func RemoveVethLink(ctx context.Context, veth *koko.VEth, m *metrics.LatencyHist
 		m.Observe("RemoveLinkDel", elapsed.Milliseconds())
 		return nil
 	})
-	elapsed = time.Since(all_start)
+	all_elapsed = time.Since(all_start)
 	// logger.Infof("Dellink: Do took %s", elapsed)
-	m.Observe("RemoveTotal", elapsed.Milliseconds())
+	m.Observe("RemoveTotal", all_elapsed.Milliseconds())
 
 	return err
 }
