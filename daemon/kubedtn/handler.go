@@ -26,6 +26,25 @@ import (
 
 // var interNodeLinkType = common.INTER_NODE_LINK_VXLAN
 
+var redis_retry = 10
+
+func (m *KubeDTN) getTopoFromRedis(name string) (common.RedisTopologyStatus, error) {
+	redisTopoStatus := &common.RedisTopologyStatus{}
+
+	for i := 0; i < redis_retry; i++ {
+		statusJSON, err := m.redis.Get(m.ctx, "cni_"+name+"_status").Result()
+		if err != redis.Nil {
+			if err = json.Unmarshal([]byte(statusJSON), redisTopoStatus); err != nil {
+				return *redisTopoStatus, err
+			}
+			return *redisTopoStatus, nil
+		}
+		time.Sleep(time.Millisecond * 200)
+	}
+
+	return *redisTopoStatus, fmt.Errorf("Failed to get pod %s status from redis", name)
+}
+
 func (m *KubeDTN) getPod(ctx context.Context, name, ns string) (*v1.Topology, error) {
 	logger := common.GetLogger(ctx)
 	if ns == "" {
@@ -128,13 +147,7 @@ func (m *KubeDTN) SetAlive(ctx context.Context, pod *pb.Pod) (*pb.BoolResponse, 
 		}
 		logger.Infof("Successfully updated pod alive status")
 	} else {
-		statusJSON, err := m.redis.Get(m.ctx, "cni_"+pod.Name+"_status").Result()
-		if err != redis.Nil {
-			if err = json.Unmarshal([]byte(statusJSON), &redisTopoStatus); err != nil {
-				log.Error(err, "Failed to unmarshal topology status from redis")
-				return &pb.BoolResponse{Response: false}, err
-			}
-		}
+		redisTopoStatus = m.getTopoFromRedis(pod.Name)
 		pod.NetNs = redisTopoStatus.NetNs
 		pod.SrcIp = redisTopoStatus.SrcIP
 
@@ -414,13 +427,11 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 		Name: link.PeerPod,
 	}
 
-	redisTopoStatus := &common.RedisTopologyStatus{}
-	statusJSON, err := m.redis.Get(m.ctx, "cni_"+link.PeerPod+"_status").Result()
-	if err != redis.Nil {
-		if err = json.Unmarshal([]byte(statusJSON), redisTopoStatus); err != nil {
-			log.Error(err, "Failed to unmarshal topology status from redis")
-		}
-	}
+	redisTopoStatus, err := m.getTopoFromRedis(link.PeerPod)
+
+	if err != nil {
+		logger.Errorf("Failed to retrieve peer pod %s/%s topology", localPod.KubeNs, link.PeerPod)
+
 	peerPod.NetNs = redisTopoStatus.NetNs
 	peerPod.SrcIp = redisTopoStatus.SrcIP
 
@@ -451,11 +462,12 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 		mutex_start := time.Now()
 		mutex := m.linkMutexes.Get(link.Uid)
 		mutex.Lock()
-		defer mutex.Unlock()
+
 		mutex_elapsed := time.Since(mutex_start)
 		m.latencyHistograms.Observe("add_mutex_same_host", mutex_elapsed.Milliseconds())
 
-		err = common.SetupVeth(ctx, myVeth, peerVeth, link, localPod, m.latencyHistograms, link.Detect)
+		err = common.SetupVeth(ctx, myVeth, peerVeth, link, localPod, m.latencyHistograms, true)
+		mutex.Unlock()
 		if err != nil {
 			logger.Errorf("Error when creating a new VEth pair with koko: %s", err)
 			logger.Infof("SELF VETH STRUCT: %+v", spew.Sdump(myVeth))
