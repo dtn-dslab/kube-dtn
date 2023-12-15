@@ -26,20 +26,19 @@ import (
 
 // var interNodeLinkType = common.INTER_NODE_LINK_VXLAN
 
-func (m *KubeDTN) getTopoFromRedis(name string, ns string) (common.RedisTopologyStatus, error) {
+var redis_retry = 1200
+
+func (m *KubeDTN) getTopoFromRedis(name string) (common.RedisTopologyStatus, error) {
 	redisTopoStatus := &common.RedisTopologyStatus{}
 
-	statusJSON, err := m.redis.Get(m.ctx, "cni_"+name+"_status").Result()
-	if err != redis.Nil {
-		if err = json.Unmarshal([]byte(statusJSON), redisTopoStatus); err != nil {
-			pod, err := m.kClient.CoreV1().Pods(ns).Get(m.ctx, name, metav1.GetOptions{})
-			if err != nil {
-				return *redisTopoStatus, fmt.Errorf("failed to get pod %s from k8s", name)
+	for i := 0; i < redis_retry; i++ {
+		statusJSON, err := m.redis.Get(m.ctx, "cni_"+name+"_status").Result()
+		if err != redis.Nil {
+			if err = json.Unmarshal([]byte(statusJSON), redisTopoStatus); err == nil {
+				return *redisTopoStatus, nil
 			}
-			redisTopoStatus.SrcIP = pod.Status.HostIP
-			return *redisTopoStatus, nil
 		}
-		return *redisTopoStatus, nil
+		time.Sleep(time.Second)
 	}
 
 	return *redisTopoStatus, fmt.Errorf("failed to get pod %s status from redis", name)
@@ -147,7 +146,7 @@ func (m *KubeDTN) SetAlive(ctx context.Context, pod *pb.Pod) (*pb.BoolResponse, 
 		}
 		logger.Infof("Successfully updated pod alive status")
 	} else {
-		redisTopoStatus, err := m.getTopoFromRedis(pod.Name, pod.KubeNs)
+		redisTopoStatus, err := m.getTopoFromRedis(pod.Name)
 		if err != nil {
 			logger.Errorf("Failed to retrieve peer pod %s/%s topology", pod.KubeNs, pod.Name)
 		}
@@ -209,12 +208,12 @@ func (m *KubeDTN) SetAlive(ctx context.Context, pod *pb.Pod) (*pb.BoolResponse, 
 // 		SrcIntf:  m.vxlanIntf,
 // 	}
 
-// 	mutex_start := time.Now()
-// 	mutex := m.linkMutexes.Get(uid)
-// 	mutex.Lock()
-// 	defer mutex.Unlock()
-// 	mutex_elapsed := time.Since(mutex_start)
-// 	m.latencyHistograms.Observe("remoteUpdate_mutex", mutex_elapsed.Milliseconds())
+// 	// mutex_start := time.Now()
+// 	// mutex := m.linkMutexes.Get(uid)
+// 	// mutex.Lock()
+// 	// defer mutex.Unlock()
+// 	// mutex_elapsed := time.Since(mutex_start)
+// 	// m.latencyHistograms.Observe("remoteUpdate_mutex", mutex_elapsed.Milliseconds())
 
 // 	// Check if there's a vxlan link with the same VNI but in different namespace
 // 	// netns := m.vxlanManager.Get(pod.Vni)
@@ -227,7 +226,7 @@ func (m *KubeDTN) SetAlive(ctx context.Context, pod *pb.Pod) (*pb.BoolResponse, 
 // 	// 	}
 // 	// }
 
-// 	err = vxlan.SetupVxLan(ctx, vxlanSpec, pod.Properties)
+// 	err = vxlan.SetupVxLan(ctx, vxlanSpec, pod.Properties, m.latencyHistograms, false)
 // 	if err != nil {
 // 		logger.Errorf("Failed to handle remote update: %v", err)
 // 		return &pb.BoolResponse{Response: false}, err
@@ -430,7 +429,7 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 		Name: link.PeerPod,
 	}
 
-	redisTopoStatus, err := m.getTopoFromRedis(link.PeerPod, localPod.KubeNs)
+	redisTopoStatus, err := m.getTopoFromRedis(link.PeerPod)
 
 	if err != nil {
 		logger.Errorf("Failed to retrieve peer pod %s/%s topology", localPod.KubeNs, link.PeerPod)
