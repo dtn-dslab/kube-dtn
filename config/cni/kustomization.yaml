@@ -4,7 +4,7 @@ namespace: kubedtn
 images:
 - name: kubedtn
   newName: registry.cn-hangzhou.aliyuncs.com/reins/kubedtn
-  newTag: 5dec566
+  newTag: "8214207"
 - name: registry.cn-hangzhou.aliyuncs.com/reins/kubedtn
   newTag: 1a88c86-dirty
 resources:

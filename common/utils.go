@@ -66,6 +66,9 @@ func UpdateRemote(ctx context.Context, localPod *pb.Pod, peerPod *pb.Pod, link *
 	url := fmt.Sprintf("passthrough:///%s:%s", peerPod.SrcIp, DefaultPort)
 	logger.Infof("Trying to do a remote update on %s", url)
 
+	// log payload
+	logger.Infof("UpdateRemotePayload: %+v", payload)
+
 	remote, err := grpc.Dial(url, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		logger.Errorf("Failed to dial remote gRPC url %s", url)

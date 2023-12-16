@@ -610,21 +610,21 @@ func (m *KubeDTN) DestroyPod(ctx context.Context, pod *pb.PodQuery) (*pb.BoolRes
 	logger.Infof("DestroyPod: Destroying pod")
 
 	// Close the grpc tunnel for this pod netns (if any)
-	wireDef := pb.WireDef{
-		KubeNs:       string(pod.KubeNs),
-		LocalPodName: string(pod.Name),
-	}
+	// wireDef := pb.WireDef{
+	// 	KubeNs:       string(pod.KubeNs),
+	// 	LocalPodName: string(pod.Name),
+	// }
 
-	removResp, err := m.RemGRPCWire(ctx, &wireDef)
-	if err != nil || !removResp.Response {
-		return &pb.BoolResponse{Response: false}, fmt.Errorf("DestroyPod: could not remove grpc wire: %v", err)
-	}
+	// removResp, err := m.RemGRPCWire(ctx, &wireDef)
+	// if err != nil || !removResp.Response {
+	// 	return &pb.BoolResponse{Response: false}, fmt.Errorf("DestroyPod: could not remove grpc wire: %v", err)
+	// }
 
 	localPod := &pb.Pod{}
 
 	redisTopoSpec, err := m.getTopoSpecFromRedis(pod.Name)
 	if err != nil {
-		logger.Infof("Failed to retrieve peer pod %s/%s topology", pod.KubeNs, pod.Name)
+		logger.Infof("Failed to retrieve peer pod %s/%s topology, topology has may already be removed", pod.KubeNs, pod.Name)
 	}
 
 	localPod.Links = common.Map(redisTopoSpec.Links, func(link v1.Link) *pb.Link { return link.ToProto() })

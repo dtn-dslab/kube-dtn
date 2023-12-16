@@ -64,14 +64,13 @@ type TopologyReconciler struct {
 func (r *TopologyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	start := time.Now()
 	log := log.FromContext(ctx)
-	behavior := false
 
 	// Get new topology from k8s
 	var topology v1.Topology
 	if err := r.Get(ctx, req.NamespacedName, &topology); err != nil {
 		if apierrors.IsNotFound(err) {
 			log.Info("Topology deleted")
-			r.Redis.Del(r.Ctx, "cni_"+topology.Name+"_spec")
+			r.Redis.Del(r.Ctx, "cni_"+req.Name+"_spec")
 		} else {
 			log.Error(err, "Unable to fetch Topology")
 		}
@@ -124,78 +123,66 @@ func (r *TopologyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, nil
 	}
 
-	if topology.Status.Links == nil {
-		behavior = true
-		// log.Info("Topology created")
-		// Saw topology for the first time, assume all links in spec have been set up,
-		// we'll copy initial links to status later
-	} else {
-		behavior = false
-		add, readd, del, propertiesChanged := r.CalcDiff(topology.Status.Links, topology.Spec.Links)
-		// log.Info("Topology changed", "add", add, "del", del, "update", propertiesChanged)
+	add, readd, del, propertiesChanged := r.CalcDiff(topology.Status.Links, topology.Spec.Links)
+	// log.Info("Topology changed", "add", add, "del", del, "update", propertiesChanged)
 
-		go func() {
-			del_start := time.Now()
+	go func() {
+		del_start := time.Now()
 
-			if err := r.DelLinks(ctx, &topology, del); err != nil {
-				log.Error(err, "Failed to delete links")
-				// return ctrl.Result{}, err
-			}
+		if err := r.DelLinks(ctx, &topology, del); err != nil {
+			log.Error(err, "Failed to delete links")
+			// return ctrl.Result{}, err
+		}
 
-			del_elapsed := time.Since(del_start)
-			fmt.Printf("%s: Topology %s del links: %d ms\n", time.Now(), topology.Name, del_elapsed.Milliseconds())
-		}()
+		del_elapsed := time.Since(del_start)
+		fmt.Printf("%s: Topology %s del links: %d ms\n", time.Now(), topology.Name, del_elapsed.Milliseconds())
+	}()
 
-		go func() {
-			add_start := time.Now()
+	go func() {
+		add_start := time.Now()
 
-			pb_links := common.Map(add, func(link v1.Link) *pb.Link { return link.ToProto() })
+		pb_links := common.Map(add, func(link v1.Link) *pb.Link { return link.ToProto() })
 
-			if err := r.AddLinks(ctx, &topology, pb_links); err != nil {
-				log.Error(err, "Failed to add links")
-				// return ctrl.Result{}, err
-			}
+		if err := r.AddLinks(ctx, &topology, pb_links); err != nil {
+			log.Error(err, "Failed to add links")
+			// return ctrl.Result{}, err
+		}
 
-			add_elapsed := time.Since(add_start)
-			fmt.Printf("%s: Topology %s add links: %d ms\n", time.Now(), topology.Name, add_elapsed.Milliseconds())
-		}()
+		add_elapsed := time.Since(add_start)
+		fmt.Printf("%s: Topology %s add links: %d ms\n", time.Now(), topology.Name, add_elapsed.Milliseconds())
+	}()
 
-		go func() {
-			readd_start := time.Now()
+	go func() {
+		readd_start := time.Now()
 
-			pb_links := common.Map(readd, func(link v1.Link) *pb.Link { return link.ToProto() })
-			for _, link := range pb_links {
-				link.Detect = true
-			}
+		pb_links := common.Map(readd, func(link v1.Link) *pb.Link { return link.ToProto() })
+		for _, link := range pb_links {
+			link.Detect = true
+		}
 
-			if err := r.AddLinks(ctx, &topology, pb_links); err != nil {
-				log.Error(err, "Failed to readd links")
-				// return ctrl.Result{}, err
-			}
+		if err := r.AddLinks(ctx, &topology, pb_links); err != nil {
+			log.Error(err, "Failed to readd links")
+			// return ctrl.Result{}, err
+		}
 
-			readd_elapsed := time.Since(readd_start)
-			fmt.Printf("%s: Topology %s readd links: %d ms\n", time.Now(), topology.Name, readd_elapsed.Milliseconds())
-		}()
+		readd_elapsed := time.Since(readd_start)
+		fmt.Printf("%s: Topology %s readd links: %d ms\n", time.Now(), topology.Name, readd_elapsed.Milliseconds())
+	}()
 
-		go func() {
-			err_start := time.Now()
+	go func() {
+		err_start := time.Now()
 
-			if err := r.UpdateLinks(ctx, &topology, propertiesChanged); err != nil {
-				log.Error(err, "Failed to update links")
-				// return ctrl.Result{}, err
-			}
+		if err := r.UpdateLinks(ctx, &topology, propertiesChanged); err != nil {
+			log.Error(err, "Failed to update links")
+			// return ctrl.Result{}, err
+		}
 
-			err_elapsed := time.Since(err_start)
-			fmt.Printf("%s: Topology %s update links: %d ms\n", time.Now(), topology.Name, err_elapsed.Milliseconds())
-		}()
-	}
+		err_elapsed := time.Since(err_start)
+		fmt.Printf("%s: Topology %s update links: %d ms\n", time.Now(), topology.Name, err_elapsed.Milliseconds())
+	}()
 
 	elapsed = time.Since(start)
-	if behavior {
-		fmt.Printf("%s: Topology %s created total time: %d ms\n", time.Now(), topology.Name, elapsed.Milliseconds())
-	} else {
-		fmt.Printf("%s: Topology %s changed total time: %d ms\n", time.Now(), topology.Name, elapsed.Milliseconds())
-	}
+	fmt.Printf("%s: Topology %s changed total time: %d ms\n", time.Now(), topology.Name, elapsed.Milliseconds())
 
 	return ctrl.Result{}, nil
 }
