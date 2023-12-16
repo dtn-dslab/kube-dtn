@@ -610,17 +610,19 @@ func (m *KubeDTN) DestroyPod(ctx context.Context, pod *pb.PodQuery) (*pb.BoolRes
 	logger.Infof("DestroyPod: Destroying pod")
 
 	// Close the grpc tunnel for this pod netns (if any)
-	// wireDef := pb.WireDef{
-	// 	KubeNs:       string(pod.KubeNs),
-	// 	LocalPodName: string(pod.Name),
-	// }
+	wireDef := pb.WireDef{
+		KubeNs:       string(pod.KubeNs),
+		LocalPodName: string(pod.Name),
+	}
 
-	// removResp, err := m.RemGRPCWire(ctx, &wireDef)
-	// if err != nil || !removResp.Response {
-	// 	return &pb.BoolResponse{Response: false}, fmt.Errorf("DestroyPod: could not remove grpc wire: %v", err)
-	// }
+	removResp, err := m.RemGRPCWire(ctx, &wireDef)
+	if err != nil || !removResp.Response {
+		return &pb.BoolResponse{Response: false}, fmt.Errorf("DestroyPod: could not remove grpc wire: %v", err)
+	}
 
-	localPod := &pb.Pod{}
+	localPod := &pb.Pod{
+		Name: pod.Name,
+	}
 
 	redisTopoSpec, err := m.getTopoSpecFromRedis(pod.Name)
 	if err != nil {
