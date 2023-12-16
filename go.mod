@@ -11,7 +11,7 @@ require (
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/goccy/go-yaml v1.9.8
 	github.com/google/gopacket v1.1.19
-	github.com/grpc-ecosystem/go-grpc-middleware v1.3.0
+	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0
 	github.com/onsi/ginkgo/v2 v2.1.4
 	github.com/onsi/gomega v1.19.0
 	github.com/openconfig/gnmi v0.0.0-20220920173703-480bf53a74d2
@@ -22,7 +22,7 @@ require (
 	github.com/vishvananda/netlink v1.1.1-0.20201029203352-d40f9887b852
 	go.uber.org/zap v1.21.0
 	golang.org/x/sys v0.5.0
-	google.golang.org/grpc v1.47.0
+	google.golang.org/grpc v1.60.0
 	google.golang.org/protobuf v1.28.1
 	k8s.io/apimachinery v0.25.0
 	k8s.io/client-go v0.25.0
