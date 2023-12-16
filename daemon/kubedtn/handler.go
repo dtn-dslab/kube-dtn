@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-redis/redis"
+	"github.com/go-redis/redis/v8"
 	v1 "github.com/y-young/kube-dtn/api/v1"
 	fastlink "github.com/y-young/kube-dtn/daemon/fastlink"
 	"github.com/y-young/kube-dtn/daemon/grpcwire"
