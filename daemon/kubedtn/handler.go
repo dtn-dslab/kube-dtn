@@ -408,7 +408,7 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 
 	// We believe that the peer daemon will handle when the peer pod comes up
 	if err != nil {
-		logger.Errorf("Failed to retrieve peer pod %s/%s topology", localPod.KubeNs, link.PeerPod)
+		logger.Infof("Failed to retrieve peer pod %s/%s topology", localPod.KubeNs, link.PeerPod)
 		return nil
 	}
 
@@ -487,6 +487,7 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 			// Now we need to make an API call to update the remote VTEP to point to us
 			err = common.UpdateRemote(ctx, localPod, peerPod, link)
 			if err != nil {
+				logger.Errorf("Error when updating remote daemon: %s", err)
 				return err
 			}
 			logger.Infof("Successfully updated remote daemon")
@@ -560,7 +561,7 @@ func (m *KubeDTN) SetupPod(ctx context.Context, pod *pb.SetupPodQuery) (*pb.Bool
 
 	redisTopoSpec, err := m.getTopoSpecFromRedis(pod.Name)
 	if err != nil {
-		logger.Errorf("Failed to retrieve peer pod %s/%s topology", pod.KubeNs, pod.Name)
+		logger.Infof("Failed to retrieve peer pod %s/%s topology", pod.KubeNs, pod.Name)
 	}
 
 	// Marking pod as "alive" by setting its srcIP and NetNS
@@ -623,7 +624,7 @@ func (m *KubeDTN) DestroyPod(ctx context.Context, pod *pb.PodQuery) (*pb.BoolRes
 
 	redisTopoSpec, err := m.getTopoSpecFromRedis(pod.Name)
 	if err != nil {
-		logger.Errorf("Failed to retrieve peer pod %s/%s topology", pod.KubeNs, pod.Name)
+		logger.Infof("Failed to retrieve peer pod %s/%s topology", pod.KubeNs, pod.Name)
 	}
 
 	localPod.Links = common.Map(redisTopoSpec.Links, func(link v1.Link) *pb.Link { return link.ToProto() })
