@@ -5,4 +5,4 @@ kind: Kustomization
 images:
 - name: controller
   newName: registry.cn-hangzhou.aliyuncs.com/reins/kubedtn-controller
-  newTag: 5ebcae6
+  newTag: f381be3-dirty

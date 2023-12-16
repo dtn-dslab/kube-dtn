@@ -26,22 +26,30 @@ import (
 
 // var interNodeLinkType = common.INTER_NODE_LINK_VXLAN
 
-var redis_retry = 1200
-
-func (m *KubeDTN) getTopoFromRedis(name string) (common.RedisTopologyStatus, error) {
+func (m *KubeDTN) getTopoStatusFromRedis(name string) (common.RedisTopologyStatus, error) {
 	redisTopoStatus := &common.RedisTopologyStatus{}
 
-	for i := 0; i < redis_retry; i++ {
-		statusJSON, err := m.redis.Get(m.ctx, "cni_"+name+"_status").Result()
-		if err != redis.Nil {
-			if err = json.Unmarshal([]byte(statusJSON), redisTopoStatus); err == nil {
-				return *redisTopoStatus, nil
-			}
+	statusJSON, err := m.redis.Get(m.ctx, "cni_"+name+"_status").Result()
+	if err != redis.Nil {
+		if err = json.Unmarshal([]byte(statusJSON), redisTopoStatus); err == nil {
+			return *redisTopoStatus, nil
 		}
-		time.Sleep(time.Second)
 	}
 
 	return *redisTopoStatus, fmt.Errorf("failed to get pod %s status from redis", name)
+}
+
+func (m *KubeDTN) getTopoSpecFromRedis(name string) (common.RedisTopologySpec, error) {
+	redisTopoSpec := &common.RedisTopologySpec{}
+
+	specJSON, err := m.redis.Get(m.ctx, "cni_"+name+"_spec").Result()
+	if err != redis.Nil {
+		if err = json.Unmarshal([]byte(specJSON), redisTopoSpec); err == nil {
+			return *redisTopoSpec, nil
+		}
+	}
+
+	return *redisTopoSpec, fmt.Errorf("failed to get pod %s spec from redis", name)
 }
 
 func (m *KubeDTN) getPod(ctx context.Context, name, ns string) (*v1.Topology, error) {
@@ -113,26 +121,15 @@ func (m *KubeDTN) SetAlive(ctx context.Context, pod *pb.Pod) (*pb.BoolResponse, 
 		"ns":     pod.KubeNs,
 		"action": "setAlive",
 	})
-	ctx = common.WithLogger(ctx, logger)
 
 	logger.Infof("Setting SrcIp=%s and NetNs=%s", pod.SrcIp, pod.NetNs)
 	alive := pod.SrcIp != "" && pod.NetNs != ""
-
-	topology, err := m.getPod(ctx, pod.Name, pod.KubeNs)
-	if err != nil {
-		logger.Errorf("Failed to read pod from K8s: %v", err)
-	}
-
-	if alive {
-		m.topologyManager.Add(topology)
-	} else {
-		m.topologyManager.Delete(topology.Name, topology.Namespace)
-	}
 
 	redisTopoStatus := &common.RedisTopologyStatus{
 		NetNs: "",
 		SrcIP: "",
 	}
+
 	if alive {
 		redisTopoStatus.NetNs = pod.NetNs
 		redisTopoStatus.SrcIP = pod.SrcIp
@@ -140,15 +137,16 @@ func (m *KubeDTN) SetAlive(ctx context.Context, pod *pb.Pod) (*pb.BoolResponse, 
 		if err != nil {
 			log.Error(err, "Failed to marshal topology status")
 		}
-		err = m.redis.Set(m.ctx, "cni_"+topology.Name+"_status", statusJSON, time.Hour*240).Err()
+		err = m.redis.Set(m.ctx, "cni_"+pod.Name+"_status", statusJSON, 0).Err()
 		if err != nil {
 			logger.Errorf("Failed to update pod alive status: %v", err)
 		}
 		logger.Infof("Successfully updated pod alive status")
 	} else {
-		redisTopoStatus, err := m.getTopoFromRedis(pod.Name)
+		redisTopoStatus, err := m.getTopoStatusFromRedis(pod.Name)
 		if err != nil {
 			logger.Errorf("Failed to retrieve peer pod %s/%s topology", pod.KubeNs, pod.Name)
+			return &pb.BoolResponse{Response: false}, err
 		}
 		pod.NetNs = redisTopoStatus.NetNs
 		pod.SrcIp = redisTopoStatus.SrcIP
@@ -160,84 +158,61 @@ func (m *KubeDTN) SetAlive(ctx context.Context, pod *pb.Pod) (*pb.BoolResponse, 
 		logger.Infof("Successfully deleted pod alive status")
 	}
 
-	// UpdateStatus can only update the status field, but we need to update metadata
-	// retryErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-	// 	topology, err := m.getPod(ctx, pod.Name, pod.KubeNs)
-	// 	if err != nil {
-	// 		logger.Errorf("Failed to read pod from K8s: %v", err)
-	// 		return err
-	// 	}
-
-	// 	if alive {
-	// 		topology.Finalizers = append(topology.Finalizers, v1.GroupVersion.Identifier())
-	// 	} else {
-	// 		topology.Finalizers = []string{}
-	// 	}
-
-	// 	_, err = m.tClient.Topology(pod.KubeNs).Update(ctx, topology, metav1.UpdateOptions{})
-	// 	return err
-	// })
-
-	// if retryErr != nil {
-	// 	logger.Errorf("Failed to set finalizer: %v", retryErr)
-	// }
-
 	return &pb.BoolResponse{Response: true}, nil
 }
 
-// func (m *KubeDTN) Update(ctx context.Context, pod *pb.RemotePod) (*pb.BoolResponse, error) {
-// 	uid := common.GetUidFromVni(pod.Vni)
-// 	logger := common.GetLogger(ctx).WithFields(log.Fields{
-// 		"pod":    pod.Name,
-// 		"ns":     pod.KubeNs,
-// 		"link":   uid,
-// 		"action": "remoteUpdate",
-// 	})
-// 	ctx = common.WithLogger(ctx, logger)
-// 	logger.Infof("Updating pod from remote")
-// 	startTime := time.Now()
+func (m *KubeDTN) Update(ctx context.Context, pod *pb.RemotePod) (*pb.BoolResponse, error) {
+	uid := common.GetUidFromVni(pod.Vni)
+	logger := common.GetLogger(ctx).WithFields(log.Fields{
+		"pod":    pod.Name,
+		"ns":     pod.KubeNs,
+		"link":   uid,
+		"action": "remoteUpdate",
+	})
+	ctx = common.WithLogger(ctx, logger)
+	logger.Infof("Updating pod from remote")
+	startTime := time.Now()
 
-// 	var err error
-// 	vxlanSpec := &vxlan.VxlanSpec{
-// 		NetNs:    pod.NetNs,
-// 		IntfName: pod.IntfName,
-// 		IntfIp:   pod.IntfIp,
-// 		PeerVtep: pod.PeerVtep,
-// 		Vni:      pod.Vni,
-// 		SrcIp:    m.nodeIP,
-// 		SrcIntf:  m.vxlanIntf,
-// 	}
+	var err error
+	vxlanSpec := &vxlan.VxlanSpec{
+		NetNs:    pod.NetNs,
+		IntfName: pod.IntfName,
+		IntfIp:   pod.IntfIp,
+		PeerVtep: pod.PeerVtep,
+		Vni:      pod.Vni,
+		SrcIp:    m.nodeIP,
+		SrcIntf:  m.vxlanIntf,
+	}
 
-// 	// mutex_start := time.Now()
-// 	// mutex := m.linkMutexes.Get(uid)
-// 	// mutex.Lock()
-// 	// defer mutex.Unlock()
-// 	// mutex_elapsed := time.Since(mutex_start)
-// 	// m.latencyHistograms.Observe("remoteUpdate_mutex", mutex_elapsed.Milliseconds())
+	mutex_start := time.Now()
+	mutex := m.linkMutexes.Get(uid)
+	mutex.Lock()
+	defer mutex.Unlock()
+	mutex_elapsed := time.Since(mutex_start)
+	m.latencyHistograms.Observe("remoteUpdate_mutex", mutex_elapsed.Milliseconds())
 
-// 	// Check if there's a vxlan link with the same VNI but in different namespace
-// 	// netns := m.vxlanManager.Get(pod.Vni)
-// 	// Ensure link is in different namespace since we might have set it up locally
-// 	// if netns != nil && *netns != pod.NetNs {
-// 	// 	logger.Infof("VXLAN with the same VNI already exists, removing it")
-// 	// 	err = vxlan.RemoveLinkWithVni(ctx, pod.Vni, *netns)
-// 	// 	if err != nil {
-// 	// 		logger.Errorf("Failed to remove existing VXLAN link: %v", err)
-// 	// 	}
-// 	// }
+	// Check if there's a vxlan link with the same VNI but in different namespace
+	// netns := m.vxlanManager.Get(pod.Vni)
+	// Ensure link is in different namespace since we might have set it up locally
+	// if netns != nil && *netns != pod.NetNs {
+	// 	logger.Infof("VXLAN with the same VNI already exists, removing it")
+	// 	err = vxlan.RemoveLinkWithVni(ctx, pod.Vni, *netns)
+	// 	if err != nil {
+	// 		logger.Errorf("Failed to remove existing VXLAN link: %v", err)
+	// 	}
+	// }
 
-// 	err = vxlan.SetupVxLan(ctx, vxlanSpec, pod.Properties, m.latencyHistograms, false)
-// 	if err != nil {
-// 		logger.Errorf("Failed to handle remote update: %v", err)
-// 		return &pb.BoolResponse{Response: false}, err
-// 	}
-// 	// m.vxlanManager.Add(pod.Vni, &pod.NetNs)
+	err = vxlan.SetupVxLan(ctx, vxlanSpec, pod.Properties, m.latencyHistograms, true)
+	if err != nil {
+		logger.Errorf("Failed to handle remote update: %v", err)
+		return &pb.BoolResponse{Response: false}, err
+	}
 
-// 	elapsed := time.Since(startTime)
-// 	m.latencyHistograms.Observe("remoteUpdate", elapsed.Milliseconds())
-// 	logger.Infof("Successfully handled remote update in %v", elapsed)
-// 	return &pb.BoolResponse{Response: true}, nil
-// }
+	elapsed := time.Since(startTime)
+	m.latencyHistograms.Observe("remoteUpdate", elapsed.Milliseconds())
+	logger.Infof("Successfully handled remote update in %v", elapsed)
+	return &pb.BoolResponse{Response: true}, nil
+}
 
 // ------------------------------------------------------------------------------------------------------
 func (m *KubeDTN) RemGRPCWire(ctx context.Context, wireDef *pb.WireDef) (*pb.BoolResponse, error) {
@@ -429,10 +404,12 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 		Name: link.PeerPod,
 	}
 
-	redisTopoStatus, err := m.getTopoFromRedis(link.PeerPod)
+	redisTopoStatus, err := m.getTopoStatusFromRedis(link.PeerPod)
 
+	// We believe that the peer daemon will handle when the peer pod comes up
 	if err != nil {
 		logger.Errorf("Failed to retrieve peer pod %s/%s topology", localPod.KubeNs, link.PeerPod)
+		return nil
 	}
 
 	peerPod.NetNs = redisTopoStatus.NetNs
@@ -481,8 +458,6 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 		m.latencyHistograms.Observe("add_veth", elapsed.Milliseconds())
 		logger.Infof("Successfully added veth link in %v", elapsed)
 	} else { // This means we're on different hosts
-		logger.Infof("%s@%s and %s@%s are on different hosts", localPod.Name, localPod.SrcIp, peerPod.Name, peerPod.SrcIp)
-
 		vxlanSpec := &vxlan.VxlanSpec{
 			NetNs:    localPod.NetNs,
 			IntfName: link.LocalIntf,
@@ -492,34 +467,41 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 			SrcIp:    m.nodeIP,
 			SrcIntf:  m.vxlanIntf,
 		}
+		if localPod.Safe {
+			// The remote expects us to handle its vxlan creation
+			mutex_start := time.Now()
+			mutex := m.linkMutexes.Get(link.Uid)
+			mutex.Lock()
+			mutex_elapsed := time.Since(mutex_start)
+			m.latencyHistograms.Observe("add_mutex_diff_host", mutex_elapsed.Milliseconds())
 
-		// mutex_start := time.Now()
-		// mutex := m.linkMutexes.Get(link.Uid)
-		// mutex.Lock()
-		// mutex_elapsed := time.Since(mutex_start)
-		// m.latencyHistograms.Observe("add_mutex_diff_host", mutex_elapsed.Milliseconds())
-		// go func() {
+			if err = vxlan.SetupVxLan(ctx, vxlanSpec, link.Properties, m.latencyHistograms, link.Detect); err != nil {
+				logger.Infof("Error when setting up VXLAN interface with koko: %s", err)
+			}
 
-		if err = vxlan.SetupVxLan(ctx, vxlanSpec, link.Properties, m.latencyHistograms, link.Detect); err != nil {
-			logger.Infof("Error when setting up VXLAN interface with koko: %s", err)
+			// Unlock in advance to avoid deadlock
+			// If we and remote daemon are both in `addLink` and called `UpdateRemote` simultaneously,
+			// we will both be waiting forever since `Update` cannot acquire the lock
+			// while `addLink` is holding it.
+			mutex.Unlock()
+			// Now we need to make an API call to update the remote VTEP to point to us
+			err = common.UpdateRemote(ctx, localPod, peerPod, link)
+			if err != nil {
+				return err
+			}
+			logger.Infof("Successfully updated remote daemon")
+		} else {
+			// We don't want safe at this point. The remote will handle its own vxlan creation
+			logger.Infof("%s@%s and %s@%s are on different hosts", localPod.Name, localPod.SrcIp, peerPod.Name, peerPod.SrcIp)
+
+			if err = vxlan.SetupVxLan(ctx, vxlanSpec, link.Properties, m.latencyHistograms, link.Detect); err != nil {
+				logger.Infof("Error when setting up VXLAN interface with koko: %s", err)
+			}
+
+			elapsed := time.Since(startTime)
+			m.latencyHistograms.Observe("add_vxlan", elapsed.Milliseconds())
+			logger.Infof("Successfully added vxlan link in %v", elapsed)
 		}
-		elapsed := time.Since(startTime)
-		m.latencyHistograms.Observe("add_vxlan", elapsed.Milliseconds())
-		logger.Infof("Successfully added vxlan link in %v", elapsed)
-		// }()
-		// m.vxlanManager.Add(vxlanSpec.Vni, &vxlanSpec.NetNs)
-
-		// Unlock in advance to avoid deadlock
-		// If we and remote daemon are both in `addLink` and called `UpdateRemote` simultaneously,
-		// we will both be waiting forever since `Update` cannot acquire the lock
-		// while `addLink` is holding it.
-		// mutex.Unlock()
-		// Now we need to make an API call to update the remote VTEP to point to us
-		// err = common.UpdateRemote(ctx, localPod, peerPod, link)
-		// if err != nil {
-		// 	return err
-		// }
-		// logger.Infof("Successfully updated remote daemon")
 
 	}
 
@@ -576,19 +558,21 @@ func (m *KubeDTN) SetupPod(ctx context.Context, pod *pb.SetupPodQuery) (*pb.Bool
 	ctx = common.WithLogger(ctx, logger)
 	logger.Infof("SetupPod: Setting up pod")
 
-	localPod, err := m.Get(ctx, &pb.PodQuery{
-		Name:   string(pod.Name),
-		KubeNs: string(pod.KubeNs),
-	})
+	redisTopoSpec, err := m.getTopoSpecFromRedis(pod.Name)
 	if err != nil {
-		logger.Infof("SetupPod: Pod is not in topology returning. err: %v", err)
-		// Pod is not be in topology, the CNI plugin should delegate the action to the next plugin
-		return &pb.BoolResponse{Response: true}, nil
+		logger.Errorf("Failed to retrieve peer pod %s/%s topology", pod.KubeNs, pod.Name)
 	}
 
 	// Marking pod as "alive" by setting its srcIP and NetNS
-	localPod.NetNs = pod.NetNs
-	localPod.SrcIp = m.nodeIP
+	localPod := &pb.Pod{
+		Name:   pod.Name,
+		KubeNs: pod.KubeNs,
+		SrcIp:  m.nodeIP,
+		NetNs:  pod.NetNs,
+		Links:  common.Map(redisTopoSpec.Links, func(link v1.Link) *pb.Link { return link.ToProto() }),
+		Safe:   true,
+	}
+
 	logger.Infof("SetupPod: Setting pod alive status")
 	ok, err := m.SetAlive(ctx, localPod)
 	if err != nil || !ok.Response {
@@ -596,13 +580,7 @@ func (m *KubeDTN) SetupPod(ctx context.Context, pod *pb.SetupPodQuery) (*pb.Bool
 		return &pb.BoolResponse{Response: false}, err
 	}
 
-	// Cleanup any existing links
-	// logger.Infof("SetupPod: Cleaning up existing links")
-	// m.DelLinks(ctx, &pb.LinksBatchQuery{
-	// 	LocalPod: localPod,
-	// 	Links:    localPod.Links,
-	// })
-
+	// Clean up any links
 	for _, link := range localPod.Links {
 		link.Detect = true
 	}
@@ -630,7 +608,6 @@ func (m *KubeDTN) DestroyPod(ctx context.Context, pod *pb.PodQuery) (*pb.BoolRes
 	ctx = common.WithLogger(ctx, logger)
 	logger.Infof("DestroyPod: Destroying pod")
 
-	m.topologyManager.Delete(pod.Name, pod.KubeNs)
 	// Close the grpc tunnel for this pod netns (if any)
 	wireDef := pb.WireDef{
 		KubeNs:       string(pod.KubeNs),
@@ -642,22 +619,21 @@ func (m *KubeDTN) DestroyPod(ctx context.Context, pod *pb.PodQuery) (*pb.BoolRes
 		return &pb.BoolResponse{Response: false}, fmt.Errorf("DestroyPod: could not remove grpc wire: %v", err)
 	}
 
-	localPod, err := m.Get(ctx, &pb.PodQuery{
-		Name:   string(pod.Name),
-		KubeNs: string(pod.KubeNs),
-	})
+	localPod := &pb.Pod{}
+
+	redisTopoSpec, err := m.getTopoSpecFromRedis(pod.Name)
 	if err != nil {
-		logger.Infof("DestroyPod: Pod is not in topology returning. err: %v", err)
-		// Pod is not be in topology, the CNI plugin should delegate the action to the next plugin
-		// This is a special combination of return values
-		return &pb.BoolResponse{Response: false}, nil
+		logger.Errorf("Failed to retrieve peer pod %s/%s topology", pod.KubeNs, pod.Name)
 	}
+
+	localPod.Links = common.Map(redisTopoSpec.Links, func(link v1.Link) *pb.Link { return link.ToProto() })
 
 	logger.Infof("DestroyPod: Set the pod as dead")
 	// By setting srcIP and NetNS to "" we're marking this POD as dead
 	localPod.NetNs = ""
 	localPod.SrcIp = ""
 	_, err = m.SetAlive(ctx, localPod)
+	// If status is not in redis, no links need to be deleted
 	if err != nil {
 		return &pb.BoolResponse{Response: true}, nil
 	}
@@ -668,9 +644,10 @@ func (m *KubeDTN) DestroyPod(ctx context.Context, pod *pb.PodQuery) (*pb.BoolRes
 	})
 	if err != nil || !response.Response {
 		logger.Infof("DestroyPod: Failed to cleanup all links: %v", err)
+	} else {
+		logger.Infof("DestroyPod: Successfully destroyed pod")
 	}
 
-	logger.Infof("DestroyPod: Successfully destroyed pod")
 	return &pb.BoolResponse{Response: true}, nil
 }
 

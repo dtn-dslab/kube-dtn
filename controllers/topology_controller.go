@@ -66,6 +66,7 @@ func (r *TopologyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	log := log.FromContext(ctx)
 	behavior := false
 
+	// Get new topology from k8s
 	var topology v1.Topology
 	if err := r.Get(ctx, req.NamespacedName, &topology); err != nil {
 		if apierrors.IsNotFound(err) {
@@ -77,6 +78,7 @@ func (r *TopologyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	// Get old topology from redis
 	startTime := time.Now()
 	oldTopoSpec := &common.RedisTopologySpec{}
 	oldTopoSpecJSON, err := r.Redis.Get(r.Ctx, "cni_"+topology.Name+"_spec").Result()
@@ -88,6 +90,7 @@ func (r *TopologyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	elapsed := time.Since(startTime)
 	log.Info("Get topology spec from redis", "elapsed", elapsed.Milliseconds())
 
+	// Get status from redis
 	startTime = time.Now()
 	oldTopoStatus := &common.RedisTopologyStatus{}
 	oldTopoStatusJSON, err := r.Redis.Get(r.Ctx, "cni_"+topology.Name+"_status").Result()
@@ -98,6 +101,19 @@ func (r *TopologyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 	elapsed = time.Since(startTime)
 	log.Info("Get topology status from redis", "elapsed", elapsed.Milliseconds())
+
+	// Set new topology to redis
+	redisTopoSpec := &common.RedisTopologySpec{
+		Links: topology.Spec.Links,
+	}
+	specJSON, err := json.Marshal(redisTopoSpec)
+	if err != nil {
+		log.Error(err, "Failed to marshal topology status")
+	}
+	err = r.Redis.Set(r.Ctx, "cni_"+topology.Name+"_spec", specJSON, 0).Err()
+	if err != nil {
+		log.Error(err, "Failed to set topology spec to redis")
+	}
 
 	topology.Status.Links = oldTopoSpec.Links
 	topology.Status.SrcIP = oldTopoStatus.SrcIP
@@ -174,19 +190,6 @@ func (r *TopologyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		}()
 	}
 
-	redisTopoSpec := &common.RedisTopologySpec{
-		Links: topology.Spec.Links,
-	}
-	specJSON, err := json.Marshal(redisTopoSpec)
-	if err != nil {
-		log.Error(err, "Failed to marshal topology status")
-	}
-
-	err = r.Redis.Set(r.Ctx, "cni_"+topology.Name+"_spec", specJSON, time.Hour*240).Err()
-	if err != nil {
-		log.Error(err, "Failed to set topology spec to redis")
-	}
-
 	elapsed = time.Since(start)
 	if behavior {
 		fmt.Printf("%s: Topology %s created total time: %d ms\n", time.Now(), topology.Name, elapsed.Milliseconds())
@@ -225,6 +228,7 @@ func (r *TopologyReconciler) AddLinks(ctx context.Context, topology *v1.Topology
 			SrcIp:  topology.Status.SrcIP,
 			NetNs:  topology.Status.NetNs,
 			KubeNs: topology.Namespace,
+			Safe:   false, // Make add links unsafe and fast
 		},
 		Links: links,
 	})

@@ -12,6 +12,7 @@ message Pod {
   string net_ns = 3;
   string kube_ns = 4;
   repeated Link links = 5;
+  bool safe = 6;
 }
 
 message Link {
