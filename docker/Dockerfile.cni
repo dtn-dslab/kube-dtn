@@ -45,7 +45,7 @@ RUN go generate ./bpf
 #---------------------------------------------- Stage 2: Build Base : Build binaries (Plugin & Daemon) - ---------------------------------
 # Building the binaries
 #FROM golang:1.17.2 AS build_base
-FROM golang:1.18.2 AS build_base
+FROM golang:1.21.5 AS build_base
 
 
 WORKDIR /go/src/github.com/y-young/kube-dtn

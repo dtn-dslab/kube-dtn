@@ -54,7 +54,7 @@ type KubeDTN struct {
 	topologyManager   *metrics.TopologyManager
 	vxlanManager      *vxlan.VxlanManager
 	latencyHistograms *metrics.LatencyHistograms
-	linkMutexes       common.MutexMap
+	linkMutexes       *common.MutexMap
 	redis             *redis.Client
 	ctx               context.Context
 	// IP of the node on which the daemon is running.
@@ -149,6 +149,7 @@ func New(cfg Config, topologyManager *metrics.TopologyManager, latencyHistograms
 		Password: "sail123456",
 		DB:       0,
 	})
+	linkMutexes := common.NewMutexMap()
 
 	m := &KubeDTN{
 		config:            cfg,
@@ -161,7 +162,7 @@ func New(cfg Config, topologyManager *metrics.TopologyManager, latencyHistograms
 		topologyManager:   topologyManager,
 		vxlanManager:      vxlanManager,
 		latencyHistograms: latencyHistograms,
-		linkMutexes:       common.NewMutexMap(),
+		linkMutexes:       &linkMutexes,
 		nodeIP:            nodeIP,
 		vxlanIntf:         vxlanIntf,
 		redis:             redisClient,
