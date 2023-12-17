@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"sync"
+	"time"
 
 	cmap "github.com/orcaman/concurrent-map/v2"
 	pb "github.com/y-young/kube-dtn/proto/v1"
@@ -69,7 +70,10 @@ func UpdateRemote(ctx context.Context, localPod *pb.Pod, peerPod *pb.Pod, link *
 	// log payload
 	logger.Infof("UpdateRemotePayload: %+v", payload)
 
-	remote, err := grpc.Dial(url, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	newctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	remote, err := grpc.DialContext(newctx, url, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		logger.Errorf("Failed to dial remote gRPC url %s", url)
 		return err

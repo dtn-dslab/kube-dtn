@@ -663,12 +663,18 @@ func (m *KubeDTN) AddLinks(ctx context.Context, query *pb.LinksBatchQuery) (*pb.
 	})
 	ctx = common.WithLogger(ctx, logger)
 
-	for _, link := range query.Links {
-		go m.addLink(ctx, localPod, link)
-		// if err != nil {
-		// 	logger.WithField("link", link.Uid).Errorf("Failed to add link: %v", err)
-		// 	return &pb.BoolResponse{Response: false}, err
-		// }
+	if localPod.GetSafe() {
+		for _, link := range query.Links {
+			m.addLink(ctx, localPod, link)
+			// if err != nil {
+			// 	logger.WithField("link", link.Uid).Errorf("Failed to add link: %v", err)
+			// 	return &pb.BoolResponse{Response: false}, err
+			// }
+		}
+	} else {
+		for _, link := range query.Links {
+			go m.addLink(ctx, localPod, link)
+		}
 	}
 
 	logger.Infof("Successfully added links")
