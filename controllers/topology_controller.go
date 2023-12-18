@@ -89,18 +89,6 @@ func (r *TopologyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	elapsed := time.Since(startTime)
 	log.Info("Get topology spec from redis", "elapsed", elapsed.Milliseconds())
 
-	// Get status from redis
-	startTime = time.Now()
-	oldTopoStatus := &common.RedisTopologyStatus{}
-	oldTopoStatusJSON, err := r.Redis.Get(r.Ctx, "cni_"+topology.Name+"_status").Result()
-	if err != redis.Nil {
-		if err = json.Unmarshal([]byte(oldTopoStatusJSON), &oldTopoStatus); err != nil {
-			log.Error(err, "Failed to unmarshal topology status from redis")
-		}
-	}
-	elapsed = time.Since(startTime)
-	log.Info("Get topology status from redis", "elapsed", elapsed.Milliseconds())
-
 	// Set new topology to redis
 	redisTopoSpec := &common.RedisTopologySpec{
 		Links: topology.Spec.Links,
@@ -113,6 +101,21 @@ func (r *TopologyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	if err != nil {
 		log.Error(err, "Failed to set topology spec to redis")
 	}
+
+	// Get status from redis
+	startTime = time.Now()
+	oldTopoStatus := &common.RedisTopologyStatus{}
+	oldTopoStatusJSON, err := r.Redis.Get(r.Ctx, "cni_"+topology.Name+"_status").Result()
+	if err != redis.Nil {
+		if err = json.Unmarshal([]byte(oldTopoStatusJSON), &oldTopoStatus); err != nil {
+			log.Error(err, "Failed to unmarshal topology status from redis")
+			return ctrl.Result{}, err
+		}
+	} else {
+		return ctrl.Result{}, nil
+	}
+	elapsed = time.Since(startTime)
+	log.Info("Get topology status from redis", "elapsed", elapsed.Milliseconds())
 
 	topology.Status.Links = oldTopoSpec.Links
 	topology.Status.SrcIP = oldTopoStatus.SrcIP

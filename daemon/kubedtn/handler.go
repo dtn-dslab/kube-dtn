@@ -419,16 +419,16 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 
 	if peerPod.SrcIp == localPod.SrcIp { // This means we're on the same host
 
-		isAlive := peerPod.SrcIp != "" && peerPod.NetNs != ""
-		logger.Infof("Is peer pod %s alive?: %t", peerPod.Name, isAlive)
-		if !isAlive {
-			// This means that our peer pod hasn't come up yet
-			// Since there's no way of telling if our peer is going to be on this host or another,
-			// the only option is to do nothing, assuming that the peer POD will do all the plumbing when it comes up
-			logger.Infof("Peer pod %s isn't alive yet, continuing", peerPod.Name)
-			return nil
-		}
-		logger.Infof("Peer pod %s is alive", peerPod.Name)
+		// isAlive := peerPod.SrcIp != "" && peerPod.NetNs != ""
+		// logger.Infof("Is peer pod %s alive?: %t", peerPod.Name, isAlive)
+		// if !isAlive {
+		// 	// This means that our peer pod hasn't come up yet
+		// 	// Since there's no way of telling if our peer is going to be on this host or another,
+		// 	// the only option is to do nothing, assuming that the peer POD will do all the plumbing when it comes up
+		// 	logger.Infof("Peer pod %s isn't alive yet, continuing", peerPod.Name)
+		// 	return nil
+		// }
+		// logger.Infof("Peer pod %s is alive", peerPod.Name)
 
 		logger.Infof("%s and %s are on the same host", localPod.Name, peerPod.Name)
 		// Creating koko's Veth struct for peer intf
@@ -622,6 +622,7 @@ func (m *KubeDTN) DestroyPod(ctx context.Context, pod *pb.PodQuery) (*pb.BoolRes
 
 	localPod := &pb.Pod{
 		Name: pod.Name,
+		Safe: true,
 	}
 
 	redisTopoSpec, err := m.getTopoSpecFromRedis(pod.Name)
@@ -694,12 +695,14 @@ func (m *KubeDTN) DelLinks(ctx context.Context, query *pb.LinksBatchQuery) (*pb.
 
 	logger.Infof("Deleting links in netns %s, ip %s", localPod.NetNs, localPod.SrcIp)
 
-	for _, link := range query.Links {
-		go m.delLink(ctx, localPod, link)
-		// if err != nil {
-		// 	logger.WithField("link", link.Uid).Errorf("Failed to delete link: %v", err)
-		// 	latest_err = err
-		// }
+	if localPod.GetSafe() {
+		for _, link := range query.Links {
+			m.delLink(ctx, localPod, link)
+		}
+	} else {
+		for _, link := range query.Links {
+			go m.delLink(ctx, localPod, link)
+		}
 	}
 
 	if latest_err != nil {
