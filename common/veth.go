@@ -44,12 +44,14 @@ func MakeVeth(ctx context.Context, netNS, linkName, ip, mac string) (*koko.VEth,
 
 // Create a veth pair and set qdiscs on both ends
 func CreateVeth(ctx context.Context, self *koko.VEth, peer *koko.VEth, properties *pb.LinkProperties, m *metrics.LatencyHistograms) error {
+	start := time.Now()
 	err := koko.MakeVeth(*self, *peer)
 	if err != nil {
 		return err
 	}
+	m.Observe("VethMakeVeth", time.Since(start).Milliseconds())
 
-	start := time.Now()
+	start = time.Now()
 	qdiscs, err := MakeQdiscs(ctx, properties)
 	if err != nil {
 		return fmt.Errorf("failed to construct qdiscs: %s", err)
@@ -102,7 +104,7 @@ func SetupVeth(ctx context.Context, self *koko.VEth, peer *koko.VEth, link *pb.L
 			}
 		}
 	}
-	m.Observe("VXLANDetect", time.Since(start).Milliseconds())
+	m.Observe("VethDetect", time.Since(start).Milliseconds())
 
 	return CreateVeth(ctx, self, peer, link.Properties, m)
 }

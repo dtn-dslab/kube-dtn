@@ -408,7 +408,7 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 
 	// We believe that the peer daemon will handle when the peer pod comes up
 	if err != nil {
-		logger.Infof("Failed to retrieve peer pod %s/%s topology", localPod.KubeNs, link.PeerPod)
+		logger.Infof("Failed to retrieve peer pod %s/%s status", localPod.KubeNs, link.PeerPod)
 		return nil
 	}
 
@@ -446,7 +446,7 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 		mutex_elapsed := time.Since(mutex_start)
 		m.latencyHistograms.Observe("add_mutex_same_host", mutex_elapsed.Milliseconds())
 
-		err = common.SetupVeth(ctx, myVeth, peerVeth, link, localPod, m.latencyHistograms, true)
+		err = common.SetupVeth(ctx, myVeth, peerVeth, link, localPod, m.latencyHistograms, false)
 		mutex.Unlock()
 		if err != nil {
 			logger.Errorf("Error when creating a new VEth pair with koko: %s", err)
