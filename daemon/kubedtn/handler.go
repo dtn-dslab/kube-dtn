@@ -355,8 +355,6 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 	// Create veth pair and connect pod side to host bridge
 	err = common.ConnectVethToBridge(myVeth, m.ovsClient)
 
-	// TODO
-
 	// Virtual-virtual link
 	peerPod := &pb.Pod{
 		Name: link.PeerPod,
@@ -375,12 +373,25 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 
 	// This means we're coming up AFTER our peer so things are pretty easy
 
+	// This flow table item may be added multiple times
+	// sudo ovs-ofctl add-flow br-dpu-12 "dl_dst=00:00:00:00:01:01, actions=output:patch-tohost"
+	flow := &ovs.Flow{
+		Matches: []ovs.Match{
+			ovs.DataLinkDestination(link.LocalMac),
+		},
+		Actions: []ovs.Action{ovs.Output(m.GetPortID(common.DPUBridge, common.ToHostPort))},
+	}
+	if err := m.ovsClient.OpenFlow.AddFlow(common.DPUBridge, flow); err != nil {
+		log.Fatalf("failed to add flow on OVS bridge %s: %v", common.DPUBridge, err)
+	}
+
 	if peerPod.SrcIp == localPod.SrcIp { // This means we're on the same host
 		// add flow table actions=output:patch-tohost
 		logger.Infof("%s and %s are on the same host", localPod.Name, peerPod.Name)
 		logger.Infof("peerPod.NetNs: %s", peerPod.NetNs)
 
-		// sudo ovs-ofctl add-flow br-dpu-12 "dl_dst=00:00:00:00:01:01, actions=output:patch-tohost"
+		// This flow table item may be added multiple times
+		// sudo ovs-ofctl add-flow br-dpu-12 "dl_dst=00:00:00:00:02:01, actions=output:patch-tohost"
 		flow := &ovs.Flow{
 			Matches: []ovs.Match{
 				ovs.DataLinkDestination(link.PeerMac),
@@ -391,6 +402,19 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 			log.Fatalf("failed to add flow on OVS bridge %s: %v", common.DPUBridge, err)
 		}
 
+		// Only add flows from local pod to peer pod
+		// sudo ovs-ofctl add-flow br-12 "dl_src=00:00:00:00:01:01, dl_dst=00:00:00:00:02:01, actions=normal"
+		flow = &ovs.Flow{
+			Matches: []ovs.Match{
+				ovs.DataLinkSource(link.LocalMac),
+				ovs.DataLinkDestination(link.PeerMac),
+			},
+			Actions: []ovs.Action{ovs.Normal()},
+		}
+		if err := m.ovsClient.OpenFlow.AddFlow(common.HostBridge, flow); err != nil {
+			log.Fatalf("failed to add flow on OVS bridge %s: %v", common.HostBridge, err)
+		}
+
 		elapsed := time.Since(startTime)
 		m.latencyHistograms.Observe("add_flow_same_host", elapsed.Milliseconds())
 		logger.Infof("Successfully added flow on same host in %v", elapsed)
@@ -399,22 +423,63 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 		// The remote will handle its own vxlan creation
 		logger.Infof("%s@%s and %s@%s are on different hosts", localPod.Name, localPod.SrcIp, peerPod.Name, peerPod.SrcIp)
 
+		// This flow table item may be added multiple times
 		// sudo ovs-ofctl add-flow br-dpu-12 "dl_dst=00:00:00:00:03:01, actions=output:vxlan-13"
 		flow := &ovs.Flow{
 			Matches: []ovs.Match{
 				ovs.DataLinkDestination(link.PeerMac),
 			},
-			// FIXME: get vxlan out port name by which node pod is on in redis
-			//Actions: []ovs.Action{ovs.Output(m.GetPortID(common.DPUBridge, common.GetVxlanOutPortName()))},
+			Actions: []ovs.Action{ovs.Output(m.GetPortID(common.DPUBridge, common.GetVxlanOutPortName(peerPod.SrcIp)))},
 		}
 		if err := m.ovsClient.OpenFlow.AddFlow(common.DPUBridge, flow); err != nil {
 			log.Fatalf("failed to add flow on OVS bridge %s: %v", common.DPUBridge, err)
+		}
+
+		// Only add flows from local pod to peer pod
+		// sudo ovs-ofctl add-flow br-12 "dl_src=00:00:00:00:01:02, dl_dst=00:00:00:00:03:01, actions=output:patch-todpu"
+		flow = &ovs.Flow{
+			Matches: []ovs.Match{
+				ovs.DataLinkSource(link.LocalMac),
+				ovs.DataLinkDestination(link.PeerMac),
+			},
+			Actions: []ovs.Action{ovs.Output(m.GetPortID(common.HostBridge, common.ToDPUPort))},
+		}
+		if err := m.ovsClient.OpenFlow.AddFlow(common.HostBridge, flow); err != nil {
+			log.Fatalf("failed to add flow on OVS bridge %s: %v", common.HostBridge, err)
 		}
 
 		elapsed := time.Since(startTime)
 		m.latencyHistograms.Observe("add_flow_diff_host", elapsed.Milliseconds())
 		logger.Infof("Successfully added flow on different host in %v", elapsed)
 
+	}
+
+	// Multicast
+	dstMac, err := net.ParseMAC(link.PeerMac)
+	if err != nil {
+		log.Fatalf("failed to parse mac %s: %v", link.PeerMac, err)
+	}
+	// sudo ovs-ofctl add-flow br-12 "dl_src=00:00:00:00:01:01, dl_dst=ff:ff:ff:ff:ff:ff, actions=mod_dl_dst=00:00:00:00:02:01, resubmit(,0)"
+	flow = &ovs.Flow{
+		Matches: []ovs.Match{
+			ovs.DataLinkSource(link.LocalMac),
+			ovs.DataLinkDestination(common.ALL_ONE_MAC),
+		},
+		Actions: []ovs.Action{ovs.ModDataLinkDestination(dstMac), ovs.Resubmit(0, 0)},
+	}
+	if err := m.ovsClient.OpenFlow.AddFlow(common.HostBridge, flow); err != nil {
+		log.Fatalf("failed to add flow on OVS bridge %s: %v", common.HostBridge, err)
+	}
+	// sudo ovs-ofctl add-flow br-12 "dl_src=00:00:00:00:01:01, dl_dst=00:00:00:00:00:00, actions=mod_dl_dst=00:00:00:00:02:01, resubmit(,0)"
+	flow = &ovs.Flow{
+		Matches: []ovs.Match{
+			ovs.DataLinkSource(link.LocalMac),
+			ovs.DataLinkDestination(common.ALL_ZERO_MAC),
+		},
+		Actions: []ovs.Action{ovs.ModDataLinkDestination(dstMac), ovs.Resubmit(0, 0)},
+	}
+	if err := m.ovsClient.OpenFlow.AddFlow(common.HostBridge, flow); err != nil {
+		log.Fatalf("failed to add flow on OVS bridge %s: %v", common.HostBridge, err)
 	}
 
 	return nil

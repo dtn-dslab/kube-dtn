@@ -15,8 +15,11 @@ const (
 	ToDPUPort          = "patch-to-dpu"
 	VxlanOutPortPrefix = "vxlan-out"
 	VethPodSideSuffix  = "-inner"
+	ALL_ONE_MAC        = "ff:ff:ff:ff:ff:ff"
+	ALL_ZERO_MAC       = "00:00:00:00:00:00"
 )
 
+// For simplicity, generate port name by node IP
 func GetVxlanOutPortName(remoteNodeIp string) string {
 	return VxlanOutPortPrefix + "-" + strconv.Itoa(int(Hash(remoteNodeIp)))
 }
