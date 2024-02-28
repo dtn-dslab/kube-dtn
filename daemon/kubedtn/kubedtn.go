@@ -3,6 +3,7 @@ package kubedtn
 import (
 	"context"
 	"fmt"
+	"github.com/digitalocean/go-openvswitch/ovs"
 	"net"
 	"os"
 	"path/filepath"
@@ -57,6 +58,7 @@ type KubeDTN struct {
 	linkMutexes       *common.MutexMap
 	redis             *redis.Client
 	ctx               context.Context
+	ovsClient         *ovs.Client
 	// IP of the node on which the daemon is running.
 	nodeIP string
 	// VXLAN interface name.
@@ -151,6 +153,10 @@ func New(cfg Config, topologyManager *metrics.TopologyManager, latencyHistograms
 	})
 	linkMutexes := common.NewMutexMap()
 
+	ovsClient := ovs.New(
+		ovs.Sudo(),
+	)
+
 	m := &KubeDTN{
 		config:            cfg,
 		rCfg:              rCfg,
@@ -166,6 +172,7 @@ func New(cfg Config, topologyManager *metrics.TopologyManager, latencyHistograms
 		nodeIP:            nodeIP,
 		vxlanIntf:         vxlanIntf,
 		redis:             redisClient,
+		ovsClient:         ovsClient,
 		ctx:               context.Background(),
 	}
 	pb.RegisterLocalServer(m.s, m)

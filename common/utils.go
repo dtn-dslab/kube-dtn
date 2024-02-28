@@ -3,6 +3,7 @@ package common
 import (
 	"context"
 	"fmt"
+	"hash/fnv"
 	"strconv"
 	"sync"
 	"time"
@@ -47,6 +48,13 @@ func GetVniFromUid(uid int64) int32 {
 // Get link UID from VXLAN Vni
 func GetUidFromVni(vni int32) int64 {
 	return int64(vni - VxlanBase)
+}
+
+// Generate hash from string
+func Hash(s string) uint64 {
+	h := fnv.New64a()
+	h.Write([]byte(s))
+	return h.Sum64()
 }
 
 // Call remote daemon to set up link on their side

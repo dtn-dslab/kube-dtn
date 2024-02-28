@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/digitalocean/go-openvswitch/ovs"
 	"net"
-	"strings"
 	"time"
 
 	"github.com/go-redis/redis/v8"
@@ -14,8 +14,6 @@ import (
 	"github.com/y-young/kube-dtn/daemon/grpcwire"
 	"github.com/y-young/kube-dtn/daemon/vxlan"
 
-	"github.com/davecgh/go-spew/spew"
-	koko "github.com/redhat-nfvpe/koko/api"
 	log "github.com/sirupsen/logrus"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -330,6 +328,14 @@ func (m *KubeDTN) GenerateNodeInterfaceName(ctx context.Context, in *pb.Generate
 	return &pb.GenerateNodeInterfaceNameResponse{Ok: true, NodeIntfName: locIfNm}, nil
 }
 
+func (m *KubeDTN) GetPortID(bridge, port string) int {
+	portID, err := common.GetPortID(m.ovsClient, bridge, port)
+	if err != nil {
+		log.Fatalf("%v", err)
+	}
+	return portID
+}
+
 func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) error {
 	logger := common.GetLogger(ctx).WithFields(log.Fields{
 		"link": link.Uid,
@@ -346,60 +352,12 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 	if err != nil {
 		return err
 	}
+	// Create veth pair and connect pod side to host bridge
+	err = common.ConnectVethToBridge(myVeth, m.ovsClient)
 
-	// First option is macvlan interface
-	if link.PeerPod == common.Localhost {
-		logger.Infof("Peer link is MacVlan")
-		macVlan := koko.MacVLan{
-			ParentIF: link.PeerIntf,
-			Mode:     common.MacvlanMode,
-		}
-		if err = koko.MakeMacVLan(*myVeth, macVlan); err != nil {
-			logger.Infof("Failed to add macvlan interface")
-			return err
-		}
-		logger.Infof("macvlan interfacee %s@%s has been added", link.LocalIntf, link.PeerIntf)
-		return nil
-	}
-
-	// Physical-virtual link
-	if strings.HasPrefix(link.PeerPod, "physical/") {
-		srcIp := strings.TrimPrefix(link.PeerPod, "physical/")
-		logger.Infof("Peer pod is physical host %s", srcIp)
-		// Update local pod on behalf of the physical host
-		// localPod is K8s pod, peerPod is physical host
-		payload := &pb.RemotePod{
-			NetNs:      localPod.NetNs,
-			IntfName:   link.LocalIntf,
-			IntfIp:     link.LocalIp,
-			PeerVtep:   srcIp,
-			Vni:        common.GetVniFromUid(link.Uid),
-			KubeNs:     localPod.KubeNs,
-			Properties: link.Properties,
-			Name:       link.PeerPod,
-		}
-		response, err := m.Update(ctx, payload)
-		if !response.Response || err != nil {
-			return err
-		}
-		logger.Info("Successfully established physical-virtual link")
-		return nil
-	}
+	// TODO
 
 	// Virtual-virtual link
-	// Initialising peer pod's metadata
-	// We need original topology object here so avoid another query
-	// to the API server in IsSkipped
-	// peerTopology, err := m.getPod(ctx, link.PeerPod, localPod.KubeNs)
-	// if err != nil {
-	// 	logger.Errorf("Failed to retrieve peer pod %s/%s topology", localPod.KubeNs, link.PeerPod)
-	// 	return err
-	// }
-	// peerPod, err := m.ToProtoPod(ctx, peerTopology)
-	// if err != nil {
-	// 	logger.Errorf("Failed to convert peer topology %s/%s to proto pod", localPod.KubeNs, link.PeerPod)
-	// 	return err
-	// }
 	peerPod := &pb.Pod{
 		Name: link.PeerPod,
 	}
@@ -418,91 +376,44 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 	// This means we're coming up AFTER our peer so things are pretty easy
 
 	if peerPod.SrcIp == localPod.SrcIp { // This means we're on the same host
-
-		// isAlive := peerPod.SrcIp != "" && peerPod.NetNs != ""
-		// logger.Infof("Is peer pod %s alive?: %t", peerPod.Name, isAlive)
-		// if !isAlive {
-		// 	// This means that our peer pod hasn't come up yet
-		// 	// Since there's no way of telling if our peer is going to be on this host or another,
-		// 	// the only option is to do nothing, assuming that the peer POD will do all the plumbing when it comes up
-		// 	logger.Infof("Peer pod %s isn't alive yet, continuing", peerPod.Name)
-		// 	return nil
-		// }
-		// logger.Infof("Peer pod %s is alive", peerPod.Name)
-
+		// add flow table actions=output:patch-tohost
 		logger.Infof("%s and %s are on the same host", localPod.Name, peerPod.Name)
-		// Creating koko's Veth struct for peer intf
 		logger.Infof("peerPod.NetNs: %s", peerPod.NetNs)
-		peerVeth, err := common.MakeVeth(ctx, peerPod.NetNs, link.PeerIntf, link.PeerIp, link.PeerMac)
-		if err != nil {
-			logger.Errorf("Failed to build koko Veth struct")
-			return err
+
+		// sudo ovs-ofctl add-flow br-dpu-12 "dl_dst=00:00:00:00:01:01, actions=output:patch-tohost"
+		flow := &ovs.Flow{
+			Matches: []ovs.Match{
+				ovs.DataLinkDestination(link.PeerMac),
+			},
+			Actions: []ovs.Action{ovs.Output(m.GetPortID(common.DPUBridge, common.ToHostPort))},
+		}
+		if err := m.ovsClient.OpenFlow.AddFlow(common.DPUBridge, flow); err != nil {
+			log.Fatalf("failed to add flow on OVS bridge %s: %v", common.DPUBridge, err)
 		}
 
-		mutex_start := time.Now()
-		mutex := m.linkMutexes.Get(link.Uid)
-		mutex.Lock()
-
-		mutex_elapsed := time.Since(mutex_start)
-		m.latencyHistograms.Observe("add_mutex_same_host", mutex_elapsed.Milliseconds())
-
-		err = common.SetupVeth(ctx, myVeth, peerVeth, link, localPod, m.latencyHistograms, false)
-		mutex.Unlock()
-		if err != nil {
-			logger.Errorf("Error when creating a new VEth pair with koko: %s", err)
-			logger.Infof("SELF VETH STRUCT: %+v", spew.Sdump(myVeth))
-			logger.Infof("PEER VETH STRUCT: %+v", spew.Sdump(peerVeth))
-			return err
-		}
 		elapsed := time.Since(startTime)
-		m.latencyHistograms.Observe("add_veth", elapsed.Milliseconds())
-		logger.Infof("Successfully added veth link in %v", elapsed)
+		m.latencyHistograms.Observe("add_flow_same_host", elapsed.Milliseconds())
+		logger.Infof("Successfully added flow on same host in %v", elapsed)
 	} else { // This means we're on different hosts
-		vxlanSpec := &vxlan.VxlanSpec{
-			NetNs:    localPod.NetNs,
-			IntfName: link.LocalIntf,
-			IntfIp:   link.LocalIp,
-			PeerVtep: peerPod.SrcIp,
-			Vni:      common.GetVniFromUid(link.Uid),
-			SrcIp:    m.nodeIP,
-			SrcIntf:  m.vxlanIntf,
+
+		// The remote will handle its own vxlan creation
+		logger.Infof("%s@%s and %s@%s are on different hosts", localPod.Name, localPod.SrcIp, peerPod.Name, peerPod.SrcIp)
+
+		// sudo ovs-ofctl add-flow br-dpu-12 "dl_dst=00:00:00:00:03:01, actions=output:vxlan-13"
+		flow := &ovs.Flow{
+			Matches: []ovs.Match{
+				ovs.DataLinkDestination(link.PeerMac),
+			},
+			// FIXME: get vxlan out port name by which node pod is on in redis
+			//Actions: []ovs.Action{ovs.Output(m.GetPortID(common.DPUBridge, common.GetVxlanOutPortName()))},
 		}
-		if localPod.Safe {
-			// The remote expects us to handle its vxlan creation
-			mutex_start := time.Now()
-			mutex := m.linkMutexes.Get(link.Uid)
-			mutex.Lock()
-			mutex_elapsed := time.Since(mutex_start)
-			m.latencyHistograms.Observe("add_mutex_diff_host", mutex_elapsed.Milliseconds())
-
-			if err = vxlan.SetupVxLan(ctx, vxlanSpec, link.Properties, m.latencyHistograms, link.Detect); err != nil {
-				logger.Infof("Error when setting up VXLAN interface with koko: %s", err)
-			}
-
-			// Unlock in advance to avoid deadlock
-			// If we and remote daemon are both in `addLink` and called `UpdateRemote` simultaneously,
-			// we will both be waiting forever since `Update` cannot acquire the lock
-			// while `addLink` is holding it.
-			mutex.Unlock()
-			// Now we need to make an API call to update the remote VTEP to point to us
-			err = common.UpdateRemote(ctx, localPod, peerPod, link)
-			if err != nil {
-				logger.Errorf("Error when updating remote daemon: %s", err)
-				return err
-			}
-			logger.Infof("Successfully updated remote daemon")
-		} else {
-			// We don't want safe at this point. The remote will handle its own vxlan creation
-			logger.Infof("%s@%s and %s@%s are on different hosts", localPod.Name, localPod.SrcIp, peerPod.Name, peerPod.SrcIp)
-
-			if err = vxlan.SetupVxLan(ctx, vxlanSpec, link.Properties, m.latencyHistograms, link.Detect); err != nil {
-				logger.Infof("Error when setting up VXLAN interface with koko: %s", err)
-			}
-
-			elapsed := time.Since(startTime)
-			m.latencyHistograms.Observe("add_vxlan", elapsed.Milliseconds())
-			logger.Infof("Successfully added vxlan link in %v", elapsed)
+		if err := m.ovsClient.OpenFlow.AddFlow(common.DPUBridge, flow); err != nil {
+			log.Fatalf("failed to add flow on OVS bridge %s: %v", common.DPUBridge, err)
 		}
+
+		elapsed := time.Since(startTime)
+		m.latencyHistograms.Observe("add_flow_diff_host", elapsed.Milliseconds())
+		logger.Infof("Successfully added flow on different host in %v", elapsed)
 
 	}
 
@@ -549,7 +460,7 @@ func (m *KubeDTN) delLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 	return nil
 }
 
-// Setup a pod, adding all its VXLAN VTEPs and links
+// Setup a pod, create veth and connect to ovs bridge
 func (m *KubeDTN) SetupPod(ctx context.Context, pod *pb.SetupPodQuery) (*pb.BoolResponse, error) {
 	logger := common.GetLogger(ctx).WithFields(log.Fields{
 		"pod":    pod.Name,
@@ -664,17 +575,11 @@ func (m *KubeDTN) AddLinks(ctx context.Context, query *pb.LinksBatchQuery) (*pb.
 	})
 	ctx = common.WithLogger(ctx, logger)
 
-	if localPod.GetSafe() {
-		for _, link := range query.Links {
-			m.addLink(ctx, localPod, link)
-			// if err != nil {
-			// 	logger.WithField("link", link.Uid).Errorf("Failed to add link: %v", err)
-			// 	return &pb.BoolResponse{Response: false}, err
-			// }
-		}
-	} else {
-		for _, link := range query.Links {
-			go m.addLink(ctx, localPod, link)
+	for _, link := range query.Links {
+		err := m.addLink(ctx, localPod, link)
+		if err != nil {
+			logger.WithField("link", link.Uid).Errorf("Failed to add link: %v", err)
+			return &pb.BoolResponse{Response: false}, err
 		}
 	}
 
@@ -695,13 +600,10 @@ func (m *KubeDTN) DelLinks(ctx context.Context, query *pb.LinksBatchQuery) (*pb.
 
 	logger.Infof("Deleting links in netns %s, ip %s", localPod.NetNs, localPod.SrcIp)
 
-	if localPod.GetSafe() {
-		for _, link := range query.Links {
-			m.delLink(ctx, localPod, link)
-		}
-	} else {
-		for _, link := range query.Links {
-			go m.delLink(ctx, localPod, link)
+	for _, link := range query.Links {
+		latest_err = m.delLink(ctx, localPod, link)
+		if latest_err != nil {
+			break
 		}
 	}
 
