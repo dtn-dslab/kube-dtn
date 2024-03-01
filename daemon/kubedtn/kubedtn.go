@@ -298,7 +298,7 @@ func New(cfg Config, topologyManager *metrics.TopologyManager, latencyHistograms
 	linkMutexes := common.NewMutexMap()
 
 	ovsClient := ovs.New(
-		ovs.Sudo(),
+	//ovs.Sudo(),
 	)
 
 	// Init two OVS bridges on node before starting cni plugin
