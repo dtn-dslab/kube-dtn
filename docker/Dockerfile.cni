@@ -95,7 +95,8 @@ RUN sed -i 's/http:\/\/archive.ubuntu.com/http:\/\/mirror.sjtu.edu.cn/g' /etc/ap
     apt-get update; \
     apt-get install -y jq; \
     apt-get install -y libpcap-dev; \
-    apt-get install -y iproute2;
+    apt-get install -y iproute2; \
+    apt-get install -y openvswitch-switch;
 
 # apt-get install -y libpcap-dev; \
 
