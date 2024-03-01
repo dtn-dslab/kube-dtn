@@ -98,7 +98,7 @@ RUN sed -i 's/http:\/\/archive.ubuntu.com/http:\/\/mirror.sjtu.edu.cn/g' /etc/ap
     apt-get install -y libpcap-dev; \
     apt-get install -y iproute2; \
     apt-get install -y openvswitch-switch; \
-    sudo systemctl start openvswitch;
+    apt-get install -y sudo;
 
 # apt-get install -y libpcap-dev; \
 
@@ -112,6 +112,7 @@ COPY docker/new-entrypoint.sh /entrypoint.sh
 # COPY LICENSE /
 RUN chmod +x ./entrypoint.sh
 RUN chmod +x /kubedtnd
+RUN sudo systemctl start openvswitch
 #RUN mkdir /lib64 && ln -s /lib/libc.musl-x86_64.so.1 /lib64/ld-linux-x86-64.so.2
 
 ENTRYPOINT ./entrypoint.sh
