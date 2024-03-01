@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"github.com/digitalocean/go-openvswitch/ovs"
+	v1 "github.com/y-young/kube-dtn/api/v1"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 
 	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
@@ -22,10 +24,10 @@ import (
 	"k8s.io/client-go/util/homedir"
 
 	topologyclientv1 "github.com/y-young/kube-dtn/api/clientset/v1beta1"
-	v1 "github.com/y-young/kube-dtn/api/v1"
 	"github.com/y-young/kube-dtn/common"
 	"github.com/y-young/kube-dtn/daemon/metrics"
 	"github.com/y-young/kube-dtn/daemon/vxlan"
+	k8sv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -86,6 +88,148 @@ func restConfig() (*rest.Config, error) {
 		}
 	}
 	return rCfg, nil
+}
+
+func GetPortID(c *ovs.Client, bridge, port string) int {
+	portID, err := common.GetPortID(c, bridge, port)
+	if err != nil {
+		log.Fatalf("%v", err)
+	}
+	return portID
+}
+
+func CreateOVSBridges(c *ovs.Client) {
+	// sudo ovs-vsctl --may-exist add-br ovs-br-host
+	if err := c.VSwitch.AddBridge(common.HostBridge); err != nil {
+		log.Fatalf("failed to add OVS bridge %s: %v", common.HostBridge, err)
+	}
+	// sudo ovs-vsctl set bridge ovs-br-host datapath_type=system
+	cmd := exec.Command("ovs-vsctl", "set", "bridge", common.HostBridge, "datapath_type=system")
+	err := cmd.Run()
+	if err != nil {
+		log.Fatalf("error setting OVS bridge %s datapath type: %v", common.HostBridge, err)
+	}
+
+	// sudo ovs-vsctl --may-exist add-br ovs-br-dpu
+	if err := c.VSwitch.AddBridge(common.DPUBridge); err != nil {
+		log.Fatalf("failed to add OVS bridge %s: %v", common.DPUBridge, err)
+	}
+
+	// sudo ovs-vsctl add-port ovs-br-host patch-to-dpu -- set interface patch-to-dpu type=patch options:peer=patch-to-host
+	if err := c.VSwitch.AddPort(common.HostBridge, common.ToDPUPort); err != nil {
+		log.Fatalf("failed to add port %s on OVS bridge %s: %v", common.ToDPUPort, common.HostBridge, err)
+	}
+	if err := c.VSwitch.Set.Interface(common.ToDPUPort, ovs.InterfaceOptions{
+		Type: ovs.InterfaceTypePatch,
+		Peer: common.ToHostPort,
+	}); err != nil {
+		log.Fatalf("failed to set port %s interface: %v", common.ToDPUPort, err)
+	}
+
+	// sudo ovs-vsctl add-port ovs-br-dpu patch-to-host -- set interface patch-to-host type=patch options:peer=patch-to-dpu
+	if err := c.VSwitch.AddPort(common.DPUBridge, common.ToHostPort); err != nil {
+		log.Fatalf("failed to add port %s on OVS bridge %s: %v", common.ToHostPort, common.DPUBridge, err)
+	}
+	if err := c.VSwitch.Set.Interface(common.ToHostPort, ovs.InterfaceOptions{
+		Type: ovs.InterfaceTypePatch,
+		Peer: common.ToDPUPort,
+	}); err != nil {
+		log.Fatalf("failed to set port %s interface: %v", common.ToHostPort, err)
+	}
+
+	// sudo ovs-ofctl add-flow ovs-br-host in_port=patch-to-dpu,actions=normal
+	flow := &ovs.Flow{
+		InPort:  GetPortID(c, common.HostBridge, common.ToDPUPort),
+		Actions: []ovs.Action{ovs.Normal()},
+	}
+	if err := c.OpenFlow.AddFlow(common.HostBridge, flow); err != nil {
+		log.Fatalf("failed to add flow on OVS bridge %s: %v", common.HostBridge, err)
+	}
+}
+
+// IsNodeReady checks if a node is in Ready state
+func IsNodeReady(node *k8sv1.Node) bool {
+	for _, condition := range node.Status.Conditions {
+		if condition.Type == k8sv1.NodeReady && condition.Status == k8sv1.ConditionTrue {
+			return true
+		}
+	}
+	return false
+}
+
+func GetNodesInfo(kClient kubernetes.Interface) (map[string]string, error) {
+
+	nodes, err := kClient.CoreV1().Nodes().List(context.Background(), metav1.ListOptions{})
+	if err != nil {
+		log.Fatalf("Error getting nodes: %v\n", err)
+	}
+
+	nodeInfoMap := make(map[string]string)
+
+	for _, node := range nodes.Items {
+		if IsNodeReady(&node) {
+			// Extracting node internal IP address
+			var internalIP string
+			for _, address := range node.Status.Addresses {
+				if address.Type == k8sv1.NodeInternalIP {
+					internalIP = address.Address
+					break
+				}
+			}
+
+			// Adding node name and internal IP to the map
+			nodeInfoMap[node.ObjectMeta.Name] = internalIP
+		}
+	}
+
+	return nodeInfoMap, err
+}
+
+func ConnectBridgesBetweenNodes(c *ovs.Client, remoteName string, remoteIP string) {
+	// sudo ovs-vsctl add-port ovs-br-dpu vxlan-out-remote-name -- set interface vxlan-out-remote-name type=vxlan options:remote_ip=remoteIP options:dst_port=8472
+	portName := common.GetVxlanOutPortName(remoteIP)
+	if err := c.VSwitch.AddPort(common.DPUBridge, portName); err != nil {
+		log.Fatalf("failed to add port %s (remoteName %s, remoteIP %s) on OVS bridge %s: %v", portName, remoteName, remoteIP, common.DPUBridge, err)
+	}
+	if err := c.VSwitch.Set.Interface(portName, ovs.InterfaceOptions{
+		Type:     ovs.InterfaceTypeVXLAN,
+		RemoteIP: remoteIP,
+	}); err != nil {
+		log.Fatalf("failed to set port %s interface: %v", portName, err)
+	}
+
+	// sudo ovs-ofctl add-flow ovs-br-dpu in_port=vxlan-13,actions=output:patch-to-host
+	flow := &ovs.Flow{
+		InPort:  GetPortID(c, common.DPUBridge, portName),
+		Actions: []ovs.Action{ovs.Output(GetPortID(c, common.DPUBridge, common.ToHostPort))},
+	}
+	if err := c.OpenFlow.AddFlow(common.DPUBridge, flow); err != nil {
+		log.Fatalf("failed to add flow on OVS bridge %s: %v", common.DPUBridge, err)
+	}
+	// sudo ovs-ofctl add-flow ovs-br-dpu in_port=patch-tohost,actions=output:vxlan-13
+	flow = &ovs.Flow{
+		InPort:  GetPortID(c, common.DPUBridge, common.ToHostPort),
+		Actions: []ovs.Action{ovs.Output(GetPortID(c, common.DPUBridge, portName))},
+	}
+	if err := c.OpenFlow.AddFlow(common.DPUBridge, flow); err != nil {
+		log.Fatalf("failed to add flow on OVS bridge %s: %v", common.DPUBridge, err)
+	}
+}
+
+func InitOVSBridges(c *ovs.Client, kClient kubernetes.Interface) {
+
+	CreateOVSBridges(c)
+
+	// TODO: Use CRD to store and get ips of all nodes in etcd
+	nodesInfo, err := GetNodesInfo(kClient)
+	if err != nil {
+		log.Fatalf("failed to get node info: %v", err)
+	}
+	for name, ip := range nodesInfo {
+		fmt.Printf("%s\t%s\n", name, ip)
+		ConnectBridgesBetweenNodes(c, name, ip)
+	}
+
 }
 
 func New(cfg Config, topologyManager *metrics.TopologyManager, latencyHistograms *metrics.LatencyHistograms) (*KubeDTN, error) {
@@ -156,6 +300,10 @@ func New(cfg Config, topologyManager *metrics.TopologyManager, latencyHistograms
 	ovsClient := ovs.New(
 		ovs.Sudo(),
 	)
+
+	// Init two OVS bridges on node before starting cni plugin
+	InitOVSBridges(ovsClient, kClient)
+	log.Infof("OVS Bridges init finished")
 
 	m := &KubeDTN{
 		config:            cfg,
