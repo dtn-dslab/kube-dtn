@@ -57,6 +57,9 @@ spec:
               mountPath: /opt/cni/bin
             - name: cni-files
               mountPath: /opt/kubedtn
+            - name: openvswitch-volume
+              mountPath: /var/run/openvswitch
+              mountPropagation: Bidirectional
             - name: var-run-netns
               mountPath: /var/run/netns
               mountPropagation: Bidirectional
@@ -79,6 +82,9 @@ spec:
         - name: cni-cfg
           hostPath:
             path: /etc/cni/net.d
+        - name: openvswitch-volume
+          hostPath:
+            path: /var/run/openvswitch
         - name: var-run-netns
           hostPath:
             path: /var/run/netns
