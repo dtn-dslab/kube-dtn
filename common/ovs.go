@@ -7,6 +7,7 @@ import (
 	"github.com/vishvananda/netlink"
 	"os/exec"
 	"strconv"
+	"strings"
 )
 
 const (
@@ -32,9 +33,10 @@ func GetPortID(bridge, port string) (int, error) {
 	if err != nil {
 		return -1, fmt.Errorf("failed to get port %s id on OVS bridge %s: %v", port, bridge, err)
 	}
-	resultInt, err := strconv.Atoi(string(output))
+	resultStr := strings.TrimSpace(string(output))
+	resultInt, err := strconv.Atoi(resultStr)
 	if err != nil {
-		return -1, fmt.Errorf("error converting port %s id %s to int: %v", port, string(output), err)
+		return -1, fmt.Errorf("error converting port %s id %s to int: %v", port, resultStr, err)
 	}
 	return resultInt, nil
 }
