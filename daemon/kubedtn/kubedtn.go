@@ -191,12 +191,16 @@ func ConnectBridgesBetweenNodes(c *ovs.Client, remoteName string, remoteIP strin
 	if err := c.VSwitch.AddPort(common.DPUBridge, portName); err != nil {
 		log.Fatalf("failed to add port %s (remoteName %s, remoteIP %s) on OVS bridge %s: %v", portName, remoteName, remoteIP, common.DPUBridge, err)
 	}
+	log.Infof("added port %s (remoteName %s, remoteIP %s) on OVS bridge %s", portName, remoteName, remoteIP, common.DPUBridge)
+
 	if err := c.VSwitch.Set.Interface(portName, ovs.InterfaceOptions{
 		Type:     ovs.InterfaceTypeVXLAN,
 		RemoteIP: remoteIP,
 	}); err != nil {
 		log.Fatalf("failed to set port %s interface: %v", portName, err)
 	}
+
+	log.Infof("interface set")
 
 	// sudo ovs-ofctl add-flow ovs-br-dpu in_port=vxlan-13,actions=output:patch-to-host
 	flow := &ovs.Flow{
@@ -206,6 +210,9 @@ func ConnectBridgesBetweenNodes(c *ovs.Client, remoteName string, remoteIP strin
 	if err := c.OpenFlow.AddFlow(common.DPUBridge, flow); err != nil {
 		log.Fatalf("failed to add flow on OVS bridge %s: %v", common.DPUBridge, err)
 	}
+
+	log.Infof("flow 1 added")
+
 	// sudo ovs-ofctl add-flow ovs-br-dpu in_port=patch-tohost,actions=output:vxlan-13
 	flow = &ovs.Flow{
 		InPort:  GetPortID(c, common.DPUBridge, common.ToHostPort),
@@ -214,6 +221,8 @@ func ConnectBridgesBetweenNodes(c *ovs.Client, remoteName string, remoteIP strin
 	if err := c.OpenFlow.AddFlow(common.DPUBridge, flow); err != nil {
 		log.Fatalf("failed to add flow on OVS bridge %s: %v", common.DPUBridge, err)
 	}
+
+	log.Infof("flow 2 added")
 }
 
 func InitOVSBridges(c *ovs.Client, kClient kubernetes.Interface) {
