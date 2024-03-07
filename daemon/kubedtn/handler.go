@@ -470,6 +470,7 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 
 	}
 
+	// FIXME: is ovs.Resubmit(0, 1) and resubmit(,0) equal?
 	// Multicast
 	dstMac, err := net.ParseMAC(link.PeerMac)
 	if err != nil {
@@ -481,7 +482,7 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 			ovs.DataLinkSource(link.LocalMac),
 			ovs.DataLinkDestination(common.ALL_ONE_MAC),
 		},
-		Actions: []ovs.Action{ovs.ModDataLinkDestination(dstMac), ovs.Resubmit(0, 0)},
+		Actions: []ovs.Action{ovs.ModDataLinkDestination(dstMac), ovs.Resubmit(0, 1)},
 	}
 	if err := m.ovsClient.OpenFlow.AddFlow(common.HostBridge, flow); err != nil {
 		log.Fatalf("failed to add flow on OVS bridge %s: %v \n flow: %v", common.HostBridge, err, m.MarshalFlowToText(flow))
@@ -492,7 +493,7 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 			ovs.DataLinkSource(link.LocalMac),
 			ovs.DataLinkDestination(common.ALL_ZERO_MAC),
 		},
-		Actions: []ovs.Action{ovs.ModDataLinkDestination(dstMac), ovs.Resubmit(0, 0)},
+		Actions: []ovs.Action{ovs.ModDataLinkDestination(dstMac), ovs.Resubmit(0, 1)},
 	}
 	if err := m.ovsClient.OpenFlow.AddFlow(common.HostBridge, flow); err != nil {
 		log.Fatalf("failed to add flow on OVS bridge %s: %v \n flow: %v", common.HostBridge, err, m.MarshalFlowToText(flow))
