@@ -336,6 +336,14 @@ func (m *KubeDTN) GetPortID(bridge, port string) int {
 	return portID
 }
 
+func (m *KubeDTN) PrintOVS() {
+	res, err := common.PrintOVSInfo()
+	if err != nil {
+		log.Fatalf("failed to print ovs info: %v", err)
+	}
+	log.Infof(res)
+}
+
 func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) error {
 	logger := common.GetLogger(ctx).WithFields(log.Fields{
 		"link": link.Uid,
@@ -562,10 +570,18 @@ func (m *KubeDTN) SetupPod(ctx context.Context, pod *pb.SetupPodQuery) (*pb.Bool
 		link.Detect = true
 	}
 
+	m.PrintOVS()
+	logger.Infof("SetupPod: start add links")
+
 	response, err := m.AddLinks(ctx, &pb.LinksBatchQuery{
 		LocalPod: localPod,
 		Links:    localPod.Links,
 	})
+
+	logger.Infof("SetupPod: finish add links")
+
+	m.PrintOVS()
+
 	if err != nil || !response.Response {
 		logger.Infof("SetupPod: Failed to setup links: %v", err)
 		return &pb.BoolResponse{Response: false}, err

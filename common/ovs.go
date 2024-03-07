@@ -26,6 +26,16 @@ func GetVxlanOutPortName(remoteNodeIp string) string {
 	return VxlanOutPortPrefix + "-" + strconv.Itoa(int(Hash(remoteNodeIp)))
 }
 
+func PrintOVSInfo() (string, error) {
+	// sudo ovs-vsctl show
+	cmd := exec.Command("ovs-vsctl", "show")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to print ovs info: %v", err)
+	}
+	return string(output), nil
+}
+
 func GetPortID(bridge, port string) (int, error) {
 	// sudo ovs-vsctl get Interface port_name ofport
 	cmd := exec.Command("ovs-vsctl", "get", "Interface", port, "ofport")
