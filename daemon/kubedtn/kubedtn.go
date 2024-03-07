@@ -90,8 +90,8 @@ func restConfig() (*rest.Config, error) {
 	return rCfg, nil
 }
 
-func GetPortID(c *ovs.Client, bridge, port string) int {
-	portID, err := common.GetPortID(c, bridge, port)
+func GetPortID(bridge, port string) int {
+	portID, err := common.GetPortID(bridge, port)
 	if err != nil {
 		log.Fatalf("%v", err)
 	}
@@ -139,7 +139,7 @@ func CreateOVSBridges(c *ovs.Client) {
 
 	// sudo ovs-ofctl add-flow ovs-br-host in_port=patch-to-dpu,actions=normal
 	flow := &ovs.Flow{
-		InPort:  GetPortID(c, common.HostBridge, common.ToDPUPort),
+		InPort:  GetPortID(common.HostBridge, common.ToDPUPort),
 		Actions: []ovs.Action{ovs.Normal()},
 	}
 	if err := c.OpenFlow.AddFlow(common.HostBridge, flow); err != nil {
@@ -204,8 +204,8 @@ func ConnectBridgesBetweenNodes(c *ovs.Client, remoteName string, remoteIP strin
 
 	// sudo ovs-ofctl add-flow ovs-br-dpu in_port=vxlan-13,actions=output:patch-to-host
 	flow := &ovs.Flow{
-		InPort:  GetPortID(c, common.DPUBridge, portName),
-		Actions: []ovs.Action{ovs.Output(GetPortID(c, common.DPUBridge, common.ToHostPort))},
+		InPort:  GetPortID(common.DPUBridge, portName),
+		Actions: []ovs.Action{ovs.Output(GetPortID(common.DPUBridge, common.ToHostPort))},
 	}
 	if err := c.OpenFlow.AddFlow(common.DPUBridge, flow); err != nil {
 		log.Fatalf("failed to add flow on OVS bridge %s: %v", common.DPUBridge, err)
@@ -215,8 +215,8 @@ func ConnectBridgesBetweenNodes(c *ovs.Client, remoteName string, remoteIP strin
 
 	// sudo ovs-ofctl add-flow ovs-br-dpu in_port=patch-tohost,actions=output:vxlan-13
 	flow = &ovs.Flow{
-		InPort:  GetPortID(c, common.DPUBridge, common.ToHostPort),
-		Actions: []ovs.Action{ovs.Output(GetPortID(c, common.DPUBridge, portName))},
+		InPort:  GetPortID(common.DPUBridge, common.ToHostPort),
+		Actions: []ovs.Action{ovs.Output(GetPortID(common.DPUBridge, portName))},
 	}
 	if err := c.OpenFlow.AddFlow(common.DPUBridge, flow); err != nil {
 		log.Fatalf("failed to add flow on OVS bridge %s: %v", common.DPUBridge, err)

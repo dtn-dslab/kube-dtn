@@ -5,6 +5,7 @@ import (
 	"github.com/digitalocean/go-openvswitch/ovs"
 	koko "github.com/redhat-nfvpe/koko/api"
 	"github.com/vishvananda/netlink"
+	"os/exec"
 	"strconv"
 )
 
@@ -24,12 +25,18 @@ func GetVxlanOutPortName(remoteNodeIp string) string {
 	return VxlanOutPortPrefix + "-" + strconv.Itoa(int(Hash(remoteNodeIp)))
 }
 
-func GetPortID(c *ovs.Client, bridge, port string) (int, error) {
-	portStats, err := c.OpenFlow.DumpPort(bridge, port)
+func GetPortID(bridge, port string) (int, error) {
+	// sudo ovs-vsctl get Interface port_name ofport
+	cmd := exec.Command("ovs-vsctl", "get", "Interface", port, "ofport")
+	output, err := cmd.Output()
 	if err != nil {
 		return -1, fmt.Errorf("failed to get port %s id on OVS bridge %s: %v", port, bridge, err)
 	}
-	return portStats.PortID, nil
+	resultInt, err := strconv.Atoi(string(output))
+	if err != nil {
+		return -1, fmt.Errorf("error converting port %s id %s to int: %v", port, string(output), err)
+	}
+	return resultInt, nil
 }
 
 // name = test-a-1

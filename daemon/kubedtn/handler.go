@@ -329,7 +329,7 @@ func (m *KubeDTN) GenerateNodeInterfaceName(ctx context.Context, in *pb.Generate
 }
 
 func (m *KubeDTN) GetPortID(bridge, port string) int {
-	portID, err := common.GetPortID(m.ovsClient, bridge, port)
+	portID, err := common.GetPortID(bridge, port)
 	if err != nil {
 		log.Fatalf("%v", err)
 	}
