@@ -220,6 +220,23 @@ func ConnectBridgesBetweenNodes(c *ovs.Client, remoteName string, remoteIP strin
 
 }
 
+func CleanOVSBridges(c *ovs.Client) {
+	// sudo ovs-ofctl del-flows br-name
+	if err := c.OpenFlow.DelFlows(common.HostBridge, nil); err != nil {
+		log.Infof("failed to delete OVS bridge %s flow at beginning: %v", common.HostBridge, err)
+	}
+	if err := c.OpenFlow.DelFlows(common.DPUBridge, nil); err != nil {
+		log.Infof("failed to delete OVS bridge %s flow at beginning: %v", common.DPUBridge, err)
+	}
+	// sudo ovs-vsctl del-br br-name
+	if err := c.VSwitch.DeleteBridge(common.HostBridge); err != nil {
+		log.Infof("failed to clean OVS bridge %s at beginning: %v", common.HostBridge, err)
+	}
+	if err := c.VSwitch.DeleteBridge(common.DPUBridge); err != nil {
+		log.Infof("failed to clean OVS bridge %s at beginning: %v", common.DPUBridge, err)
+	}
+}
+
 func InitOVSBridges(c *ovs.Client, kClient kubernetes.Interface) {
 
 	CreateOVSBridges(c)
@@ -303,6 +320,8 @@ func New(cfg Config, topologyManager *metrics.TopologyManager, latencyHistograms
 	// Do not prepend sudo here
 	ovsClient := ovs.New()
 
+	// Clean existing bridges created by kubedtn before
+	CleanOVSBridges(ovsClient)
 	// Init two OVS bridges on node before starting cni plugin
 	InitOVSBridges(ovsClient, kClient)
 	log.Infof("OVS Bridges init finished")
