@@ -569,18 +569,10 @@ func (m *KubeDTN) SetupPod(ctx context.Context, pod *pb.SetupPodQuery) (*pb.Bool
 	for _, link := range localPod.Links {
 		link.Detect = true
 	}
-
-	m.PrintOVS()
-	logger.Infof("SetupPod: start add links")
-
 	response, err := m.AddLinks(ctx, &pb.LinksBatchQuery{
 		LocalPod: localPod,
 		Links:    localPod.Links,
 	})
-
-	logger.Infof("SetupPod: finish add links")
-
-	m.PrintOVS()
 
 	if err != nil || !response.Response {
 		logger.Infof("SetupPod: Failed to setup links: %v", err)
@@ -655,6 +647,8 @@ func (m *KubeDTN) AddLinks(ctx context.Context, query *pb.LinksBatchQuery) (*pb.
 		"action": "add",
 	})
 	ctx = common.WithLogger(ctx, logger)
+
+	logger.Infof("start add links: query links %v", query.Links)
 
 	for _, link := range query.Links {
 		err := m.addLink(ctx, localPod, link)
