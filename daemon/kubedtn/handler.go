@@ -390,7 +390,7 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 		Actions: []ovs.Action{ovs.Output(m.GetPortID(common.DPUBridge, common.ToHostPort))},
 	}
 	if err := m.ovsClient.OpenFlow.AddFlow(common.DPUBridge, flow); err != nil {
-		log.Fatalf("failed to add flow on OVS bridge %s: %v", common.DPUBridge, err)
+		log.Fatalf("failed to add flow on OVS bridge %s: %v \n flow: %v", common.DPUBridge, err, flow)
 	}
 
 	if peerPod.SrcIp == localPod.SrcIp { // This means we're on the same host
@@ -407,7 +407,7 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 			Actions: []ovs.Action{ovs.Output(m.GetPortID(common.DPUBridge, common.ToHostPort))},
 		}
 		if err := m.ovsClient.OpenFlow.AddFlow(common.DPUBridge, flow); err != nil {
-			log.Fatalf("failed to add flow on OVS bridge %s: %v", common.DPUBridge, err)
+			log.Fatalf("failed to add flow on OVS bridge %s: %v \n flow: %v", common.DPUBridge, err, flow)
 		}
 
 		// Only add flows from local pod to peer pod
@@ -420,7 +420,7 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 			Actions: []ovs.Action{ovs.Normal()},
 		}
 		if err := m.ovsClient.OpenFlow.AddFlow(common.HostBridge, flow); err != nil {
-			log.Fatalf("failed to add flow on OVS bridge %s: %v", common.HostBridge, err)
+			log.Fatalf("failed to add flow on OVS bridge %s: %v \n flow: %v", common.HostBridge, err, flow)
 		}
 
 		elapsed := time.Since(startTime)
@@ -440,7 +440,7 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 			Actions: []ovs.Action{ovs.Output(m.GetPortID(common.DPUBridge, common.GetVxlanOutPortName(peerPod.SrcIp)))},
 		}
 		if err := m.ovsClient.OpenFlow.AddFlow(common.DPUBridge, flow); err != nil {
-			log.Fatalf("failed to add flow on OVS bridge %s: %v", common.DPUBridge, err)
+			log.Fatalf("failed to add flow on OVS bridge %s: %v \n flow: %v", common.DPUBridge, err, flow)
 		}
 
 		// Only add flows from local pod to peer pod
@@ -453,7 +453,7 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 			Actions: []ovs.Action{ovs.Output(m.GetPortID(common.HostBridge, common.ToDPUPort))},
 		}
 		if err := m.ovsClient.OpenFlow.AddFlow(common.HostBridge, flow); err != nil {
-			log.Fatalf("failed to add flow on OVS bridge %s: %v", common.HostBridge, err)
+			log.Fatalf("failed to add flow on OVS bridge %s: %v \n flow: %v", common.HostBridge, err, flow)
 		}
 
 		elapsed := time.Since(startTime)
@@ -476,7 +476,7 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 		Actions: []ovs.Action{ovs.ModDataLinkDestination(dstMac), ovs.Resubmit(0, 0)},
 	}
 	if err := m.ovsClient.OpenFlow.AddFlow(common.HostBridge, flow); err != nil {
-		log.Fatalf("failed to add flow on OVS bridge %s: %v", common.HostBridge, err)
+		log.Fatalf("failed to add flow on OVS bridge %s: %v \n flow: %v", common.HostBridge, err, flow)
 	}
 	// sudo ovs-ofctl add-flow br-12 "dl_src=00:00:00:00:01:01, dl_dst=00:00:00:00:00:00, actions=mod_dl_dst=00:00:00:00:02:01, resubmit(,0)"
 	flow = &ovs.Flow{
@@ -487,7 +487,7 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 		Actions: []ovs.Action{ovs.ModDataLinkDestination(dstMac), ovs.Resubmit(0, 0)},
 	}
 	if err := m.ovsClient.OpenFlow.AddFlow(common.HostBridge, flow); err != nil {
-		log.Fatalf("failed to add flow on OVS bridge %s: %v", common.HostBridge, err)
+		log.Fatalf("failed to add flow on OVS bridge %s: %v \n flow: %v", common.HostBridge, err, flow)
 	}
 
 	return nil
