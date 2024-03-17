@@ -352,6 +352,7 @@ func New(cfg Config, topologyManager *metrics.TopologyManager, latencyHistograms
 }
 
 func (m *KubeDTN) Serve() error {
+	defer CleanOVSBridges(m.ovsClient)
 	logger.Infof("GRPC server has started on port: %d", m.config.Port)
 	return m.s.Serve(m.lis)
 }
