@@ -20,6 +20,10 @@ make install
 2. Build CNI plugin image:
 
 ```sh
+sudo apt install make clang libbpf-dev gcc-multilib libpcap-dev
+cd bpf
+go generate ./...
+cd ..
 make cni-docker
 ```
 
