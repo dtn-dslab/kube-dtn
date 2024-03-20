@@ -1,4 +1,4 @@
-CNI_IMG := registry.cn-hangzhou.aliyuncs.com/reins/kubedtn
+CNI_IMG := g-lbjv2952-docker.pkg.coding.net/dtn/kubedtn/kubedtn
 GOPATH ?= ${HOME}/go
 ARCHS := "linux/amd64"
 

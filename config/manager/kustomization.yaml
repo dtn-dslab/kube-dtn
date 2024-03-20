@@ -4,5 +4,5 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 images:
 - name: controller
-  newName: registry.cn-hangzhou.aliyuncs.com/reins/kubedtn-controller
-  newTag: 9e5b4f4-dirty
+  newName: g-lbjv2952-docker.pkg.coding.net/dtn/kubedtn/kubedtn-controller
+  newTag: 1c11e15-dirty

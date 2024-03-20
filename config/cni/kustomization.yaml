@@ -3,8 +3,8 @@ kind: Kustomization
 namespace: kubedtn
 images:
 - name: kubedtn
-  newName: registry.cn-hangzhou.aliyuncs.com/reins/kubedtn
-  newTag: 9e5b4f4
+  newName: harbor.easzlab.io.local:8443/library/kubedtn
+  newTag: 1c11e15-dirty
 - name: registry.cn-hangzhou.aliyuncs.com/reins/kubedtn
   newTag: 1a88c86-dirty
 resources:
