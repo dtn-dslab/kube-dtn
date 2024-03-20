@@ -22,6 +22,11 @@ type RedisTopologyStatus struct {
 	NetNs string `json:"net_ns"`
 }
 
+type OVSFlowBetweenNodesSpec struct {
+	RemoteIP  string `json:"remote_ip"`
+	RemoteMac string `json:"remote_mac"`
+}
+
 type RedisTopologySpec struct {
 	Links []pb.Link `json:"links"`
 }

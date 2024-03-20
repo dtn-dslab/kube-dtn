@@ -61,6 +61,8 @@ type KubeDTN struct {
 	redis             *redis.Client
 	ctx               context.Context
 	ovsClient         *ovs.Client
+	// Key is node name, Value is node IP
+	nodesInfo map[string]string
 	// IP of the node on which the daemon is running.
 	nodeIP string
 	// VXLAN interface name.
@@ -237,19 +239,14 @@ func CleanOVSBridges(c *ovs.Client) {
 	}
 }
 
-func InitOVSBridges(c *ovs.Client, kClient kubernetes.Interface) {
+func InitOVSBridges(c *ovs.Client, nodesInfo map[string]string) {
 
 	CreateOVSBridges(c)
 
 	// TODO: Use CRD to store and get ips of all nodes in etcd
-	nodesInfo, err := GetNodesInfo(kClient)
-	if err != nil {
-		log.Fatalf("failed to get node info: %v", err)
-	}
 	for name, ip := range nodesInfo {
 		ConnectBridgesBetweenNodes(c, name, ip)
 	}
-
 }
 
 func New(cfg Config, topologyManager *metrics.TopologyManager, latencyHistograms *metrics.LatencyHistograms) (*KubeDTN, error) {
@@ -320,10 +317,15 @@ func New(cfg Config, topologyManager *metrics.TopologyManager, latencyHistograms
 	// Do not prepend sudo here
 	ovsClient := ovs.New()
 
+	nodesInfoMap, err := GetNodesInfo(kClient)
+	if err != nil {
+		log.Fatalf("failed to get node info: %v", err)
+	}
+
 	// Clean existing bridges created by kubedtn before
 	CleanOVSBridges(ovsClient)
 	// Init two OVS bridges on node before starting cni plugin
-	InitOVSBridges(ovsClient, kClient)
+	InitOVSBridges(ovsClient, nodesInfoMap)
 	log.Infof("OVS Bridges init finished")
 
 	m := &KubeDTN{
@@ -342,6 +344,7 @@ func New(cfg Config, topologyManager *metrics.TopologyManager, latencyHistograms
 		vxlanIntf:         vxlanIntf,
 		redis:             redisClient,
 		ovsClient:         ovsClient,
+		nodesInfo:         nodesInfoMap,
 		ctx:               context.Background(),
 	}
 	pb.RegisterLocalServer(m.s, m)
@@ -353,6 +356,7 @@ func New(cfg Config, topologyManager *metrics.TopologyManager, latencyHistograms
 
 func (m *KubeDTN) Serve() error {
 	defer CleanOVSBridges(m.ovsClient)
+	m.StartAddFlowListener()
 	logger.Infof("GRPC server has started on port: %d", m.config.Port)
 	return m.s.Serve(m.lis)
 }

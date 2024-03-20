@@ -5,17 +5,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/digitalocean/go-openvswitch/ovs"
+	myovs "github.com/y-young/kube-dtn/daemon/ovs"
 	"github.com/y-young/kube-dtn/daemon/vxlan"
 	"net"
 	"time"
 
 	"github.com/go-redis/redis/v8"
+	log "github.com/sirupsen/logrus"
 	v1 "github.com/y-young/kube-dtn/api/v1"
 	fastlink "github.com/y-young/kube-dtn/daemon/fastlink"
 	"github.com/y-young/kube-dtn/daemon/grpcwire"
-	myovs "github.com/y-young/kube-dtn/daemon/ovs"
-
-	log "github.com/sirupsen/logrus"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/google/gopacket/pcap"
@@ -36,6 +35,105 @@ func (m *KubeDTN) getTopoStatusFromRedis(name string) (common.RedisTopologyStatu
 	}
 
 	return *redisTopoStatus, fmt.Errorf("failed to get pod %s status from redis", name)
+}
+
+func (m *KubeDTN) blockGetTopoStatusFromRedis(name string) (common.RedisTopologyStatus, error) {
+	redisTopoStatus := &common.RedisTopologyStatus{}
+
+	pollInterval := 100 * time.Millisecond
+	illegalFatalTimes := 0
+
+	for {
+		statusJSON, err := m.redis.Get(m.ctx, "cni_"+name+"_status").Result()
+		if err != redis.Nil {
+			if err = json.Unmarshal([]byte(statusJSON), redisTopoStatus); err == nil {
+				return *redisTopoStatus, nil
+			} else {
+				illegalFatalTimes += 1
+				if illegalFatalTimes >= 5 {
+					return *redisTopoStatus, fmt.Errorf("failed to get pod %s status from redis", name)
+				}
+			}
+		}
+		time.Sleep(pollInterval)
+	}
+}
+
+func (m *KubeDTN) StartAddFlowListener() {
+	for name, ip := range m.nodesInfo {
+		// If is current node, ignore
+		if ip == m.nodeIP {
+			continue
+		}
+
+		ip := ip
+		name := name
+		go func() {
+			pubsub := m.redis.Subscribe(m.ctx, common.GetRedisChannelName(name))
+			defer func(pubsub *redis.PubSub) {
+				err := pubsub.Close()
+				if err != nil {
+					fmt.Println("Error closing subscription:", err)
+				}
+			}(pubsub)
+			for {
+				msg, err := pubsub.ReceiveMessage(m.ctx)
+				if err != nil {
+					fmt.Printf("Error receiving add flow message from node (name %s, ip %s): %v\n", name, ip, err)
+					return
+				}
+				fmt.Println("Received message:", msg.Payload)
+
+				redisFlow := &common.OVSFlowBetweenNodesSpec{}
+				if err != redis.Nil {
+					if err = json.Unmarshal([]byte(msg.Payload), redisFlow); err == nil {
+						m.addFlowWhenTriggered(redisFlow.RemoteMac, redisFlow.RemoteIP)
+					}
+				}
+			}
+		}()
+
+	}
+
+}
+
+func (m *KubeDTN) triggerFlowAddOnRemotes(LocalMac string, LocalNodeIP string) error {
+
+	redisFlow := &common.OVSFlowBetweenNodesSpec{
+		RemoteMac: LocalMac,
+		RemoteIP:  LocalNodeIP,
+	}
+
+	flowJSON, err := json.Marshal(redisFlow)
+	if err != nil {
+		log.Error(err, "Failed to marshal redis flow")
+	}
+	for name, ip := range m.nodesInfo {
+		// If is current node, ignore
+		if ip == m.nodeIP {
+			continue
+		}
+		err = m.redis.Publish(m.ctx, common.GetRedisChannelName(name), flowJSON).Err()
+		if err != nil {
+			logger.Errorf("Failed to trigger flow add (LocalMac %s, LocalNodeIP %s) by redis for node (name %s, ip %s): %v", LocalMac, LocalNodeIP, name, ip, err)
+		}
+	}
+	logger.Infof("Successfully trigger all flows add through redis (LocalMac %s, LocalNodeIP %s)", LocalMac, LocalNodeIP)
+	return nil
+}
+
+func (m *KubeDTN) addFlowWhenTriggered(RemoteMac string, RemoteIP string) {
+
+	// sudo ovs-ofctl add-flow br-dpu-12 "dl_dst=00:00:00:00:01:01, actions=output:vxlan-13"
+	flow := &ovs.Flow{
+		Matches: []ovs.Match{
+			ovs.DataLinkDestination(RemoteMac),
+		},
+		Actions: []ovs.Action{ovs.Output(m.GetPortID(common.DPUBridge, common.GetVxlanOutPortName(RemoteIP)))},
+	}
+	if err := m.ovsClient.OpenFlow.AddFlow(common.DPUBridge, flow); err != nil {
+		log.Fatalf("failed to add flow on OVS bridge %s: %v \n flow: %v", common.DPUBridge, err, m.MarshalFlowToText(flow))
+	}
 }
 
 func (m *KubeDTN) getTopoSpecFromRedis(name string) (common.RedisTopologySpec, error) {
@@ -372,25 +470,7 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 	// Create veth pair and connect pod side to host bridge
 	err = common.ConnectVethToBridge(myVeth, m.ovsClient)
 
-	// Virtual-virtual link
-	peerPod := &pb.Pod{
-		Name: link.PeerPod,
-	}
-
-	redisTopoStatus, err := m.getTopoStatusFromRedis(link.PeerPod)
-
-	// We believe that the peer daemon will handle when the peer pod comes up
-	if err != nil {
-		logger.Infof("Failed to retrieve peer pod %s/%s status", localPod.KubeNs, link.PeerPod)
-		return nil
-	}
-
-	peerPod.NetNs = redisTopoStatus.NetNs
-	peerPod.SrcIp = redisTopoStatus.SrcIP
-
-	// This means we're coming up AFTER our peer so things are pretty easy
-
-	// This flow table item may be added multiple times
+	// Add flow on ovs-br-dpu bridge, forward request to local mac to ovs-br-host bridge
 	// sudo ovs-ofctl add-flow br-dpu-12 "dl_dst=00:00:00:00:01:01, actions=output:patch-tohost"
 	flow := &ovs.Flow{
 		Matches: []ovs.Match{
@@ -402,22 +482,40 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 		log.Fatalf("failed to add flow on OVS bridge %s: %v \n flow: %v", common.DPUBridge, err, m.MarshalFlowToText(flow))
 	}
 
+	// All remote daemonset should add flow on ovs-br-dpu bridge, forward request to current node
+	// sudo ovs-ofctl add-flow br-dpu-12 "dl_dst=00:00:00:00:01:01, actions=output:vxlan-13"
+	// TODO: grpc remote daemonset
+	err = m.triggerFlowAddOnRemotes(link.LocalMac, localPod.SrcIp)
+	if err != nil {
+		return err
+	}
+
+	// Virtual-virtual link
+	peerPod := &pb.Pod{
+		Name: link.PeerPod,
+	}
+
+	// Blocking get, return until status exist to ensure getting peer pod info successfully
+	redisTopoStatus, err := m.blockGetTopoStatusFromRedis(link.PeerPod)
+
+	//  Err must be nil
+	if err != nil {
+		logger.Fatalf("Failed to retrieve peer pod %s/%s status", localPod.KubeNs, link.PeerPod)
+	}
+
+	peerPod.NetNs = redisTopoStatus.NetNs
+	peerPod.SrcIp = redisTopoStatus.SrcIP
+
+	// This means we're coming up AFTER our peer so things are pretty easy
+
 	if peerPod.SrcIp == localPod.SrcIp { // This means we're on the same host
 		// add flow table actions=output:patch-tohost
 		logger.Infof("%s and %s are on the same host", localPod.Name, peerPod.Name)
 		logger.Infof("peerPod.NetNs: %s", peerPod.NetNs)
 
-		// This flow table item may be added multiple times
+		// No need to add flow on ovs-br-dpu bridge which forward request to peer mac to ovs-br-host bridge
+		// as it has been added by peer.
 		// sudo ovs-ofctl add-flow br-dpu-12 "dl_dst=00:00:00:00:02:01, actions=output:patch-tohost"
-		flow := &ovs.Flow{
-			Matches: []ovs.Match{
-				ovs.DataLinkDestination(link.PeerMac),
-			},
-			Actions: []ovs.Action{ovs.Output(m.GetPortID(common.DPUBridge, common.ToHostPort))},
-		}
-		if err := m.ovsClient.OpenFlow.AddFlow(common.DPUBridge, flow); err != nil {
-			log.Fatalf("failed to add flow on OVS bridge %s: %v \n flow: %v", common.DPUBridge, err, m.MarshalFlowToText(flow))
-		}
 
 		// Only add flows from local pod to peer pod
 		// sudo ovs-ofctl add-flow br-12 "dl_src=00:00:00:00:01:01, dl_dst=00:00:00:00:02:01, actions=normal"
@@ -437,20 +535,8 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 		logger.Infof("Successfully added flow on same host in %v", elapsed)
 	} else { // This means we're on different hosts
 
-		// The remote will handle its own vxlan creation
+		// The remote will handle its own ovs flow creation
 		logger.Infof("%s@%s and %s@%s are on different hosts", localPod.Name, localPod.SrcIp, peerPod.Name, peerPod.SrcIp)
-
-		// This flow table item may be added multiple times
-		// sudo ovs-ofctl add-flow br-dpu-12 "dl_dst=00:00:00:00:03:01, actions=output:vxlan-13"
-		flow := &ovs.Flow{
-			Matches: []ovs.Match{
-				ovs.DataLinkDestination(link.PeerMac),
-			},
-			Actions: []ovs.Action{ovs.Output(m.GetPortID(common.DPUBridge, common.GetVxlanOutPortName(peerPod.SrcIp)))},
-		}
-		if err := m.ovsClient.OpenFlow.AddFlow(common.DPUBridge, flow); err != nil {
-			log.Fatalf("failed to add flow on OVS bridge %s: %v \n flow: %v", common.DPUBridge, err, m.MarshalFlowToText(flow))
-		}
 
 		// Only add flows from local pod to peer pod
 		// sudo ovs-ofctl add-flow br-12 "dl_src=00:00:00:00:01:02, dl_dst=00:00:00:00:03:01, actions=output:patch-todpu"
