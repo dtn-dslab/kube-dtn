@@ -24,6 +24,8 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/homedir"
 
+	myovs "github.com/y-young/kube-dtn/daemon/ovs"
+
 	topologyclientv1 "github.com/y-young/kube-dtn/api/clientset/v1beta1"
 	"github.com/y-young/kube-dtn/common"
 	"github.com/y-young/kube-dtn/daemon/metrics"
@@ -204,9 +206,12 @@ func ConnectBridgesBetweenNodes(c *ovs.Client, remoteName string, remoteIP strin
 	}
 	log.Infof("added port %s (remoteName %s, remoteIP %s) on OVS bridge %s", portName, remoteName, remoteIP, common.DPUBridge)
 
-	if err := c.VSwitch.Set.Interface(portName, ovs.InterfaceOptions{
+	// TODO: different port for every node
+	myVSwitch := myovs.MyVSwitchService{}
+	if err := myVSwitch.SetInterface(portName, myovs.InterfaceOptions{
 		Type:     ovs.InterfaceTypeVXLAN,
 		RemoteIP: remoteIP,
+		DstPort:  8472,
 	}); err != nil {
 		log.Fatalf("failed to set port %s interface: %v", portName, err)
 	}
