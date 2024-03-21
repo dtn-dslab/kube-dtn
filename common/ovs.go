@@ -2,12 +2,13 @@ package common
 
 import (
 	"fmt"
-	"github.com/digitalocean/go-openvswitch/ovs"
-	koko "github.com/redhat-nfvpe/koko/api"
-	"github.com/vishvananda/netlink"
 	"os/exec"
 	"strconv"
 	"strings"
+
+	"github.com/digitalocean/go-openvswitch/ovs"
+	koko "github.com/redhat-nfvpe/koko/api"
+	"github.com/vishvananda/netlink"
 )
 
 const (
@@ -15,7 +16,7 @@ const (
 	DPUBridge          = "ovs-br-dpu"
 	ToHostPort         = "patch-to-host"
 	ToDPUPort          = "patch-to-dpu"
-	VxlanOutPortPrefix = "vxlan-out"
+	VxlanOutPortPrefix = "vxlan-out-hash-"
 	VethPodSideSuffix  = "-inner"
 	RedisChannelPrefix = "pub-sub"
 	ALL_ONE_MAC        = "ff:ff:ff:ff:ff:ff"
