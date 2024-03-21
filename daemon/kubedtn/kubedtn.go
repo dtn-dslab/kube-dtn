@@ -198,7 +198,7 @@ func GetNodesInfo(kClient kubernetes.Interface) (map[string]string, error) {
 	return nodeInfoMap, err
 }
 
-func ConnectBridgesBetweenNodes(c *ovs.Client, remoteName string, remoteIP string) {
+func ConnectBridgesBetweenNodes(c *ovs.Client, remoteName string, remoteIP string, portValue int) {
 	// sudo ovs-vsctl add-port ovs-br-dpu vxlan-out-remote-name -- set interface vxlan-out-remote-name type=vxlan options:remote_ip=remoteIP options:dst_port=8472
 	portName := common.GetVxlanOutPortName(remoteIP)
 	if err := c.VSwitch.AddPort(common.DPUBridge, portName); err != nil {
@@ -206,12 +206,11 @@ func ConnectBridgesBetweenNodes(c *ovs.Client, remoteName string, remoteIP strin
 	}
 	log.Infof("added port %s (remoteName %s, remoteIP %s) on OVS bridge %s", portName, remoteName, remoteIP, common.DPUBridge)
 
-	// TODO: different port for every node
 	myVSwitch := myovs.MyVSwitchService{}
 	if err := myVSwitch.SetInterface(portName, myovs.InterfaceOptions{
 		Type:     ovs.InterfaceTypeVXLAN,
 		RemoteIP: remoteIP,
-		DstPort:  8472,
+		DstPort:  portValue,
 	}); err != nil {
 		log.Fatalf("failed to set port %s interface: %v", portName, err)
 	}
@@ -249,8 +248,10 @@ func InitOVSBridges(c *ovs.Client, nodesInfo map[string]string) {
 	CreateOVSBridges(c)
 
 	// TODO: Use CRD to store and get ips of all nodes in etcd
+	port := common.VXLAN_PORT_BASE
 	for name, ip := range nodesInfo {
-		ConnectBridgesBetweenNodes(c, name, ip)
+		ConnectBridgesBetweenNodes(c, name, ip, port)
+		port += 1
 	}
 }
 
