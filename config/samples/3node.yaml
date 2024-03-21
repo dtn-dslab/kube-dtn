@@ -10,16 +10,16 @@ items:
       links:
         - uid: 1
           peer_pod: r2
-          local_intf: eth1
-          peer_intf: eth1
+          local_intf: r1-eth1
+          peer_intf: r2-eth1
           local_ip: 12.12.12.1/24
           peer_ip: 12.12.12.2/24
           local_mac: 00:00:00:00:01:01
           peer_mac: 00:00:00:00:01:02
         - uid: 2
           peer_pod: r3
-          local_intf: eth2
-          peer_intf: eth1
+          local_intf: r1-eth2
+          peer_intf: r3-eth1
           local_ip: 13.13.13.1/24
           peer_ip: 13.13.13.3/24
           local_mac: 00:00:00:00:01:03
@@ -32,16 +32,16 @@ items:
       links:
         - uid: 1
           peer_pod: r1
-          local_intf: eth1
-          peer_intf: eth1
+          local_intf: r2-eth1
+          peer_intf: r1-eth1
           local_ip: 12.12.12.2/24
           peer_ip: 12.12.12.1/24
           local_mac: 00:00:00:00:01:02
           peer_mac: 00:00:00:00:01:01
         - uid: 3
           peer_pod: r3
-          local_intf: eth2
-          peer_intf: eth2
+          local_intf: r2-eth2
+          peer_intf: r3-eth2
           local_ip: 23.23.23.2/24
           peer_ip: 23.23.23.3/24
           local_mac: 00:00:00:00:01:05
@@ -54,16 +54,16 @@ items:
       links:
         - uid: 2
           peer_pod: r1
-          local_intf: eth1
-          peer_intf: eth2
+          local_intf: r3-eth1
+          peer_intf: r1-eth2
           local_ip: 13.13.13.3/24
           peer_ip: 13.13.13.1/24
           local_mac: 00:00:00:00:01:04
           peer_mac: 00:00:00:00:01:03
         - uid: 3
           peer_pod: r2
-          local_intf: eth2
-          peer_intf: eth2
+          local_intf: r3-eth2
+          peer_intf: r2-eth2
           local_ip: 23.23.23.3/24
           peer_ip: 23.23.23.2/24
           local_mac: 00:00:00:00:01:06
