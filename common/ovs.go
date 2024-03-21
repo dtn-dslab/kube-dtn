@@ -16,7 +16,7 @@ const (
 	DPUBridge          = "ovs-br-dpu"
 	ToHostPort         = "patch-to-host"
 	ToDPUPort          = "patch-to-dpu"
-	VxlanOutPortPrefix = "vxlan-out-hash-"
+	VxlanOutPortPrefix = "vxlan-out"
 	VethPodSideSuffix  = "-inner"
 	RedisChannelPrefix = "pub-sub"
 	ALL_ONE_MAC        = "ff:ff:ff:ff:ff:ff"
