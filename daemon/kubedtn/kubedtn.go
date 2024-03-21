@@ -220,15 +220,6 @@ func ConnectBridgesBetweenNodes(c *ovs.Client, remoteName string, remoteIP strin
 		log.Fatalf("failed to add flow on OVS bridge %s: %v", common.DPUBridge, err)
 	}
 
-	// sudo ovs-ofctl add-flow ovs-br-dpu in_port=patch-tohost,actions=output:vxlan-13
-	flow = &ovs.Flow{
-		InPort:  GetPortID(common.DPUBridge, common.ToHostPort),
-		Actions: []ovs.Action{ovs.Output(GetPortID(common.DPUBridge, portName))},
-	}
-	if err := c.OpenFlow.AddFlow(common.DPUBridge, flow); err != nil {
-		log.Fatalf("failed to add flow on OVS bridge %s: %v", common.DPUBridge, err)
-	}
-
 }
 
 func CleanOVSBridges(c *ovs.Client) {
