@@ -243,13 +243,16 @@ func CleanOVSBridges(c *ovs.Client) {
 	}
 }
 
-func InitOVSBridges(c *ovs.Client, nodesInfo map[string]string) {
+func InitOVSBridges(c *ovs.Client, nodesInfo map[string]string, nodeIP string) {
 
 	CreateOVSBridges(c)
 
 	// TODO: Use CRD to store and get ips of all nodes in etcd
 	port := common.VXLAN_PORT_BASE
 	for name, ip := range nodesInfo {
+		if ip == nodeIP {
+			continue
+		}
 		ConnectBridgesBetweenNodes(c, name, ip, port)
 		port += 1
 	}
@@ -331,7 +334,7 @@ func New(cfg Config, topologyManager *metrics.TopologyManager, latencyHistograms
 	// Clean existing bridges created by kubedtn before
 	CleanOVSBridges(ovsClient)
 	// Init two OVS bridges on node before starting cni plugin
-	InitOVSBridges(ovsClient, nodesInfoMap)
+	InitOVSBridges(ovsClient, nodesInfoMap, nodeIP)
 	log.Infof("OVS Bridges init finished")
 
 	m := &KubeDTN{
