@@ -253,8 +253,12 @@ func InitOVSBridges(c *ovs.Client, nodesInfo map[string]string, nodeIP string) {
 		if ip == nodeIP {
 			continue
 		}
-		ConnectBridgesBetweenNodes(c, name, ip, port)
-		port += 1
+		if ip == "10.0.0.15" || ip == "10.0.0.16" {
+			ConnectBridgesBetweenNodes(c, name, ip, 5002)
+		} else {
+			ConnectBridgesBetweenNodes(c, name, ip, port)
+			port += 1
+		}
 	}
 }
 
