@@ -4,11 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
+	"time"
+
 	"github.com/digitalocean/go-openvswitch/ovs"
 	myovs "github.com/y-young/kube-dtn/daemon/ovs"
 	"github.com/y-young/kube-dtn/daemon/vxlan"
-	"net"
-	"time"
 
 	"github.com/go-redis/redis/v8"
 	log "github.com/sirupsen/logrus"
@@ -87,7 +88,10 @@ func (m *KubeDTN) StartAddFlowListener() {
 				redisFlow := &common.OVSFlowBetweenNodesSpec{}
 				if err != redis.Nil {
 					if err = json.Unmarshal([]byte(msg.Payload), redisFlow); err == nil {
-						m.addFlowWhenTriggered(redisFlow.RemoteMac, redisFlow.RemoteIP)
+						// If is current node, ignore
+						if redisFlow.RemoteIP != m.nodeIP {
+							m.addFlowWhenTriggered(redisFlow.RemoteMac, redisFlow.RemoteIP)
+						}
 					}
 				}
 			}
