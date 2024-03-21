@@ -3,12 +3,13 @@ package kubedtn
 import (
 	"context"
 	"fmt"
-	"github.com/digitalocean/go-openvswitch/ovs"
-	v1 "github.com/y-young/kube-dtn/api/v1"
 	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
+
+	"github.com/digitalocean/go-openvswitch/ovs"
+	v1 "github.com/y-young/kube-dtn/api/v1"
 
 	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
 	grpc_ctxtags "github.com/grpc-ecosystem/go-grpc-middleware/tags"
@@ -105,6 +106,10 @@ func CreateOVSBridges(c *ovs.Client) {
 	if err := c.VSwitch.AddBridge(common.HostBridge); err != nil {
 		log.Fatalf("failed to add OVS bridge %s: %v", common.HostBridge, err)
 	}
+	// sudo ovs-ofctl del-flows ovs-br-host
+	if err := c.OpenFlow.DelFlows(common.HostBridge, &ovs.MatchFlow{}); err != nil {
+		log.Fatalf("failed to del-flows when initialize in OVS bridge %s: %v", common.HostBridge, err)
+	}
 	// sudo ovs-vsctl set bridge ovs-br-host datapath_type=system
 	cmd := exec.Command("ovs-vsctl", "set", "bridge", common.HostBridge, "datapath_type=system")
 	err := cmd.Run()
@@ -115,6 +120,10 @@ func CreateOVSBridges(c *ovs.Client) {
 	// sudo ovs-vsctl --may-exist add-br ovs-br-dpu
 	if err := c.VSwitch.AddBridge(common.DPUBridge); err != nil {
 		log.Fatalf("failed to add OVS bridge %s: %v", common.DPUBridge, err)
+	}
+	// sudo ovs-ofctl del-flows ovs-br-dpu
+	if err := c.OpenFlow.DelFlows(common.DPUBridge, &ovs.MatchFlow{}); err != nil {
+		log.Fatalf("failed to del-flows when initialize in OVS bridge %s: %v", common.DPUBridge, err)
 	}
 
 	// sudo ovs-vsctl add-port ovs-br-host patch-to-dpu -- set interface patch-to-dpu type=patch options:peer=patch-to-host
