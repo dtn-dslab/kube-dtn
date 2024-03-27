@@ -1,8 +1,11 @@
 package common
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os/exec"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -17,6 +20,7 @@ const (
 	ToHostPort         = "patch-to-host"
 	ToDPUPort          = "patch-to-dpu"
 	VxlanOutPortPrefix = "vxlan-out"
+	VxlanIDPrefix      = "vxlan"
 	VethPodSideSuffix  = "-inner"
 	RedisChannelPrefix = "pub-sub"
 	ALL_ONE_MAC        = "ff:ff:ff:ff:ff:ff"
@@ -26,6 +30,20 @@ const (
 // For simplicity, generate port name by node IP
 func GetVxlanOutPortName(remoteNodeIp string) string {
 	return VxlanOutPortPrefix + "-" + strconv.Itoa(int(Hash(remoteNodeIp)))
+}
+
+func hashString(input string) string {
+	hasher := sha256.New()
+	hasher.Write([]byte(input))
+	hash := hasher.Sum(nil)
+	return hex.EncodeToString(hash)
+}
+
+// Generate VXLAN ID by two string given (the order doesn't matter)
+func GetVxlanId(remoteNodeIp string, localNodeIp string) string {
+	strings := []string{remoteNodeIp, localNodeIp}
+	sort.Strings(strings)
+	return VxlanIDPrefix + "-" + hashString(strings[0])[:4] + "-" + hashString(strings[1])[:4]
 }
 
 func GetRedisChannelName(nodeName string) string {
