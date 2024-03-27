@@ -18,7 +18,7 @@ const (
 	DPUBridge          = "ovs-br-dpu"
 	ToHostPort         = "patch-to-host"
 	ToDPUPort          = "patch-to-dpu"
-	VxlanOutPortPrefix = "vxlan-out"
+	VxlanOutPortPrefix = "vxlan"
 	VethPodSideSuffix  = "-inner"
 	RedisChannelPrefix = "pub-sub"
 	ALL_ONE_MAC        = "ff:ff:ff:ff:ff:ff"
@@ -27,7 +27,7 @@ const (
 
 // For simplicity, generate port name by node IP
 func GetVxlanOutPortName(remoteNodeIp string) string {
-	return VxlanOutPortPrefix + "-" + strconv.Itoa(int(Hash(remoteNodeIp)))
+	return VxlanOutPortPrefix + strconv.Itoa(int(Hash(remoteNodeIp)))[:8]
 }
 
 func hashIP(ipAddr string) uint32 {
