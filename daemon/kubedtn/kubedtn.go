@@ -208,7 +208,7 @@ func DeleteVXLAN(vxlan_name string) error {
 func CreateVXLAN(vxlan_name string, vni string, remoteIP string, localIP string, dstPort string) error {
 	createCmd := exec.Command("ip", "link", "add", vxlan_name, "type", "vxlan", "id", vni, "remote", remoteIP, "local", localIP, "dstport", dstPort)
 	if err := createCmd.Run(); err != nil {
-		return fmt.Errorf("error creating VXLAN device %v: %v", err, createCmd.String())
+		return fmt.Errorf("error creating VXLAN device: %v", err)
 	}
 
 	upCmd := exec.Command("ip", "link", "set", vxlan_name, "up")
@@ -255,7 +255,7 @@ func ConnectBridgesBetweenNodes(c *ovs.Client, remoteName string, remoteIP strin
 
 }
 
-func CleanOVSBridges(c *ovs.Client, nodesInfo map[string]string) {
+func CleanOVSBridges(c *ovs.Client, nodesInfo map[string]string, nodeIP string) {
 	// sudo ovs-ofctl del-flows br-name
 	if err := c.OpenFlow.DelFlows(common.HostBridge, nil); err != nil {
 		log.Infof("failed to delete OVS bridge %s flow at beginning: %v", common.HostBridge, err)
@@ -273,6 +273,9 @@ func CleanOVSBridges(c *ovs.Client, nodesInfo map[string]string) {
 
 	// delete vxlans
 	for _, ip := range nodesInfo {
+		if ip == nodeIP {
+			continue
+		}
 		name := common.GetVxlanOutPortName(ip)
 		if err := DeleteVXLAN(name); err != nil {
 			log.Infof("failed to delete vxlan %s at beginning: %v", name, err)
@@ -372,7 +375,7 @@ func New(cfg Config, topologyManager *metrics.TopologyManager, latencyHistograms
 	}
 
 	// Clean existing bridges created by kubedtn before
-	CleanOVSBridges(ovsClient, nodesInfoMap)
+	CleanOVSBridges(ovsClient, nodesInfoMap, nodeIP)
 	// Init two OVS bridges on node before starting cni plugin
 	InitOVSBridges(ovsClient, nodesInfoMap, nodeIP)
 	log.Infof("OVS Bridges init finished")
@@ -404,7 +407,7 @@ func New(cfg Config, topologyManager *metrics.TopologyManager, latencyHistograms
 }
 
 func (m *KubeDTN) Serve() error {
-	defer CleanOVSBridges(m.ovsClient, m.nodesInfo)
+	defer CleanOVSBridges(m.ovsClient, m.nodesInfo, m.nodeIP)
 	m.StartAddFlowListener()
 	logger.Infof("GRPC server has started on port: %d", m.config.Port)
 	return m.s.Serve(m.lis)
