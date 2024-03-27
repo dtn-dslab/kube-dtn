@@ -1,9 +1,8 @@
 package common
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
+	"net"
 	"os/exec"
 	"sort"
 	"strconv"
@@ -20,7 +19,6 @@ const (
 	ToHostPort         = "patch-to-host"
 	ToDPUPort          = "patch-to-dpu"
 	VxlanOutPortPrefix = "vxlan-out"
-	VxlanIDPrefix      = "vxlan"
 	VethPodSideSuffix  = "-inner"
 	RedisChannelPrefix = "pub-sub"
 	ALL_ONE_MAC        = "ff:ff:ff:ff:ff:ff"
@@ -32,18 +30,31 @@ func GetVxlanOutPortName(remoteNodeIp string) string {
 	return VxlanOutPortPrefix + "-" + strconv.Itoa(int(Hash(remoteNodeIp)))
 }
 
-func hashString(input string) string {
-	hasher := sha256.New()
-	hasher.Write([]byte(input))
-	hash := hasher.Sum(nil)
-	return hex.EncodeToString(hash)
+func hashIP(ipAddr string) uint32 {
+	ip := net.ParseIP(ipAddr)
+	if ip == nil {
+		panic("Invalid IP address")
+	}
+
+	ipBytes := strings.Split(ip.String(), ".")
+
+	var hash uint32
+	for _, byteStr := range ipBytes {
+		byteInt, err := strconv.Atoi(byteStr)
+		if err != nil {
+			panic("Invalid byte in IP address")
+		}
+		hash = (hash << 8) | uint32(byteInt)
+	}
+
+	return hash
 }
 
 // Generate VXLAN ID by two string given (the order doesn't matter)
 func GetVxlanId(remoteNodeIp string, localNodeIp string) string {
 	strings := []string{remoteNodeIp, localNodeIp}
 	sort.Strings(strings)
-	return VxlanIDPrefix + "-" + hashString(strings[0])[:4] + "-" + hashString(strings[1])[:4]
+	return strconv.FormatUint(uint64((hashIP(strings[0])+hashIP(strings[1]))&0xFFFFFF), 10)
 }
 
 func GetRedisChannelName(nodeName string) string {
