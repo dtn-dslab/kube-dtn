@@ -198,12 +198,12 @@ func GetNodesInfo(kClient kubernetes.Interface) (map[string]string, error) {
 }
 
 func CreateVXLAN(vxlan_name string, vni string, remoteIP string, localIP string, dstPort string) error {
-	createCmd := exec.Command("sudo", "ip", "link", "add", vxlan_name, "type", "vxlan", "id", vni, "remote", remoteIP, "local", localIP, "dstport", dstPort)
+	createCmd := exec.Command("ip", "link", "add", vxlan_name, "type", "vxlan", "id", vni, "remote", remoteIP, "local", localIP, "dstport", dstPort)
 	if err := createCmd.Run(); err != nil {
 		return fmt.Errorf("error creating VXLAN device: %v", err)
 	}
 
-	upCmd := exec.Command("sudo", "ip", "link", "set", vxlan_name, "up")
+	upCmd := exec.Command("ip", "link", "set", vxlan_name, "up")
 	if err := upCmd.Run(); err != nil {
 		return fmt.Errorf("error bringing up VXLAN device: %v", err)
 	}
