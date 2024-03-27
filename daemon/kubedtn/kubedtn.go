@@ -210,6 +210,7 @@ func ConnectBridgesBetweenNodes(c *ovs.Client, remoteName string, remoteIP strin
 	if err := myVSwitch.SetInterface(portName, myovs.InterfaceOptions{
 		Type:     ovs.InterfaceTypeVXLAN,
 		RemoteIP: remoteIP,
+		LocalIP:  localIP,
 		DstPort:  portValue,
 		Key:      common.GetVxlanId(remoteIP, localIP),
 	}); err != nil {
@@ -254,7 +255,7 @@ func InitOVSBridges(c *ovs.Client, nodesInfo map[string]string, nodeIP string) {
 			continue
 		}
 		if ip == "10.0.0.15" || ip == "10.0.0.16" {
-			ConnectBridgesBetweenNodes(c, name, ip, 5002, nodeIP)
+			ConnectBridgesBetweenNodes(c, name, ip, 9997, nodeIP)
 		} else {
 			ConnectBridgesBetweenNodes(c, name, ip, port, nodeIP)
 			port += 1

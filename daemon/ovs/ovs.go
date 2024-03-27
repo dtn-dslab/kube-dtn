@@ -81,6 +81,7 @@ type InterfaceOptions struct {
 	IngressRatePolicing  int64
 	IngressBurstPolicing int64
 	RemoteIP             string
+	LocalIP              string
 	DstPort              int
 	Key                  string
 }
@@ -118,6 +119,10 @@ func (i InterfaceOptions) slice() []string {
 
 	if i.RemoteIP != "" {
 		s = append(s, fmt.Sprintf("options:remote_ip=%s", i.RemoteIP))
+	}
+
+	if i.LocalIP != "" {
+		s = append(s, fmt.Sprintf("options:local_ip=%s", i.LocalIP))
 	}
 
 	if i.DstPort > 0 {
