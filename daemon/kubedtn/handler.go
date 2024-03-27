@@ -14,7 +14,6 @@ import (
 	"github.com/go-redis/redis/v8"
 	log "github.com/sirupsen/logrus"
 	v1 "github.com/y-young/kube-dtn/api/v1"
-	fastlink "github.com/y-young/kube-dtn/daemon/fastlink"
 	"github.com/y-young/kube-dtn/daemon/grpcwire"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -561,13 +560,21 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 
 	}
 
+	if err := m.addMulticastResubmitFlows(link); err != nil {
+		log.Fatal(err)
+	}
+
+	return nil
+}
+
+func (m *KubeDTN) addMulticastResubmitFlows(link *pb.Link) error {
 	// Multicast
 	dstMac, err := net.ParseMAC(link.PeerMac)
 	if err != nil {
-		log.Fatalf("failed to parse mac %s: %v", link.PeerMac, err)
+		return fmt.Errorf("failed to parse mac %s: %v", link.PeerMac, err)
 	}
 	// sudo ovs-ofctl add-flow br-12 "dl_src=00:00:00:00:01:01, dl_dst=ff:ff:ff:ff:ff:ff, actions=mod_dl_dst=00:00:00:00:02:01, resubmit(,0)"
-	flow = &ovs.Flow{
+	flow := &ovs.Flow{
 		Matches: []ovs.Match{
 			ovs.DataLinkSource(link.LocalMac),
 			ovs.DataLinkDestination(common.ALL_ONE_MAC),
@@ -575,7 +582,7 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 		Actions: []ovs.Action{ovs.ModDataLinkDestination(dstMac), myovs.Resubmit(0, 0)},
 	}
 	if err := m.ovsClient.OpenFlow.AddFlow(common.HostBridge, flow); err != nil {
-		log.Fatalf("failed to add flow on OVS bridge %s: %v \n flow: %v", common.HostBridge, err, m.MarshalFlowToText(flow))
+		return fmt.Errorf("failed to add flow on OVS bridge %s: %v \n flow: %v", common.HostBridge, err, m.MarshalFlowToText(flow))
 	}
 	// sudo ovs-ofctl add-flow br-12 "dl_src=00:00:00:00:01:01, dl_dst=00:00:00:00:00:00, actions=mod_dl_dst=00:00:00:00:02:01, resubmit(,0)"
 	flow = &ovs.Flow{
@@ -586,13 +593,13 @@ func (m *KubeDTN) addLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 		Actions: []ovs.Action{ovs.ModDataLinkDestination(dstMac), myovs.Resubmit(0, 0)},
 	}
 	if err := m.ovsClient.OpenFlow.AddFlow(common.HostBridge, flow); err != nil {
-		log.Fatalf("failed to add flow on OVS bridge %s: %v \n flow: %v", common.HostBridge, err, m.MarshalFlowToText(flow))
+		return fmt.Errorf("failed to add flow on OVS bridge %s: %v \n flow: %v", common.HostBridge, err, m.MarshalFlowToText(flow))
 	}
 
 	return nil
 }
 
-func (m *KubeDTN) delLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) error {
+func (m *KubeDTN) delLink(ctx context.Context, _ *pb.Pod, link *pb.Link) error {
 	logger := common.GetLogger(ctx).WithFields(log.Fields{
 		"link": link.Uid,
 	})
@@ -600,34 +607,33 @@ func (m *KubeDTN) delLink(ctx context.Context, localPod *pb.Pod, link *pb.Link) 
 	logger.Infof("Deleting link: %v", link)
 	startTime := time.Now()
 
-	// Creating koko's Veth struct for local intf
-	myVeth, err := common.MakeVeth(ctx, localPod.NetNs, link.LocalIntf, link.LocalIp, link.LocalMac)
-	if err != nil {
-		logger.Infof("Failed to construct koko Veth struct")
-		return err
+	// Delete flows
+	matchSrc := &ovs.MatchFlow{
+		Matches: []ovs.Match{
+			ovs.DataLinkSource(link.LocalMac),
+		},
+	}
+	if err := m.ovsClient.OpenFlow.DelFlows(common.HostBridge, matchSrc); err != nil {
+		logger.Errorf("failed to del flow for local mac %s on OVS bridge %s: %v", link.LocalMac, common.HostBridge, err)
 	}
 
-	// API call to koko to remove local Veth link
-	// go func() {
-	// if err = myVeth.RemoveVethLink(); err != nil {
-	// 	// instead of failing, just log the error and move on
-	// 	logger.Infof("Failed to remove veth link: %s", err)
-	// }
-
-	if err := fastlink.RemoveVethLink(ctx, myVeth, m.latencyHistograms); err != nil {
-		logger.Infof("Failed to remove veth link: %s", err)
+	matchDst := &ovs.MatchFlow{
+		Matches: []ovs.Match{
+			ovs.DataLinkDestination(link.LocalMac),
+		},
 	}
+	if err := m.ovsClient.OpenFlow.DelFlows(common.HostBridge, matchDst); err != nil {
+		logger.Errorf("failed to del flow for local mac %s on OVS bridge %s: %v", link.LocalMac, common.HostBridge, err)
+	}
+	if err := m.ovsClient.OpenFlow.DelFlows(common.DPUBridge, matchDst); err != nil {
+		logger.Errorf("failed to del flow for local mac %s on OVS bridge %s: %v", link.LocalMac, common.DPUBridge, err)
+	}
+
+	// TODO: delete according flow in ovs-br-dpu bridge on all remote nodes
 
 	elapsed := time.Since(startTime)
 	m.latencyHistograms.Observe("del", elapsed.Milliseconds())
 	logger.Infof("Successfully deleted link in %v", elapsed)
-	// }()
-
-	// vni := common.GetVniFromUid(link.Uid)
-	// netns := m.vxlanManager.Get(vni)
-	// if netns != nil && *netns == localPod.NetNs {
-	// 	m.vxlanManager.Delete(vni)
-	// }
 
 	return nil
 }
@@ -798,27 +804,63 @@ func (m *KubeDTN) UpdateLinks(ctx context.Context, query *pb.LinksBatchQuery) (*
 		"ns":     localPod.KubeNs,
 		"action": "update",
 	})
-	ctx = common.WithLogger(ctx, logger)
-	ctx = common.WithCtxValue(ctx, common.TCPIP_BYPASS, m.config.TCPIPBypass)
+	_ = common.WithLogger(ctx, logger)
 
 	for _, link := range query.Links {
 		logger := logger.WithField("link", link.Uid)
 		logger.Infof("Updating link")
 		startTime := time.Now()
 
-		myVeth, err := common.MakeVeth(ctx, localPod.NetNs, link.LocalIntf, link.LocalIp, link.LocalMac)
-		if err != nil {
-			return &pb.BoolResponse{Response: false}, err
+		// Only the ovs-br-host brige will be modified when updating
+
+		// Delete all flows with dl_src=local_mac on ovs-br-host
+		match := &ovs.MatchFlow{
+			Matches: []ovs.Match{
+				ovs.DataLinkSource(link.LocalMac),
+			},
 		}
-		qdiscs, err := common.MakeQdiscs(ctx, link.Properties)
-		if err != nil {
-			logger.Errorf("Failed to construct qdiscs: %s", err)
-			return &pb.BoolResponse{Response: false}, err
+		if err := m.ovsClient.OpenFlow.DelFlows(common.HostBridge, match); err != nil {
+			logger.Errorf("[UpdateLinks] failed to del flow for local mac %s on OVS bridge %s: %v", link.LocalMac, common.HostBridge, err)
 		}
-		err = common.SetVethQdiscs(ctx, myVeth, qdiscs)
+
+		// Add new flows
+		peerPod := &pb.Pod{
+			Name: link.PeerPod,
+		}
+		redisTopoStatus, err := m.blockGetTopoStatusFromRedis(link.PeerPod)
 		if err != nil {
-			logger.Errorf("Failed to update qdiscs on self veth %s: %v", myVeth, err)
-			return &pb.BoolResponse{Response: false}, err
+			logger.Fatalf("[UpdateLinks] Failed to retrieve peer pod %s/%s status", localPod.KubeNs, link.PeerPod)
+		}
+		peerPod.SrcIp = redisTopoStatus.SrcIP
+
+		if peerPod.SrcIp == localPod.SrcIp {
+			// On the same host
+			flow := &ovs.Flow{
+				Matches: []ovs.Match{
+					ovs.DataLinkSource(link.LocalMac),
+					ovs.DataLinkDestination(link.PeerMac),
+				},
+				Actions: []ovs.Action{ovs.Normal()},
+			}
+			if err := m.ovsClient.OpenFlow.AddFlow(common.HostBridge, flow); err != nil {
+				log.Fatalf("[UpdateLinks] failed to add flow on OVS bridge %s: %v \n flow: %v", common.HostBridge, err, m.MarshalFlowToText(flow))
+			}
+		} else {
+			// On different hosts
+			flow := &ovs.Flow{
+				Matches: []ovs.Match{
+					ovs.DataLinkSource(link.LocalMac),
+					ovs.DataLinkDestination(link.PeerMac),
+				},
+				Actions: []ovs.Action{ovs.Output(m.GetPortID(common.HostBridge, common.ToDPUPort))},
+			}
+			if err := m.ovsClient.OpenFlow.AddFlow(common.HostBridge, flow); err != nil {
+				log.Fatalf("[UpdateLinks] failed to add flow on OVS bridge %s: %v \n flow: %v", common.HostBridge, err, m.MarshalFlowToText(flow))
+			}
+		}
+
+		if err := m.addMulticastResubmitFlows(link); err != nil {
+			logger.Errorf("[UpdateLinks] %v", err)
 		}
 
 		elapsed := time.Since(startTime)

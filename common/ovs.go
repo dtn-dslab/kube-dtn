@@ -103,8 +103,6 @@ func ConnectVethToBridge(veth *koko.VEth, c *ovs.Client) error {
 		return err
 	}
 
-	// TODO: sudo ip l s test-a-1 up
-
 	// sudo ovs-vsctl add-port br-12 test-a-1
 	if err = c.VSwitch.AddPort(HostBridge, name); err != nil {
 		netlink.LinkDel(link_br)
