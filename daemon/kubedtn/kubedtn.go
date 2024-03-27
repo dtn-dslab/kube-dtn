@@ -197,6 +197,14 @@ func GetNodesInfo(kClient kubernetes.Interface) (map[string]string, error) {
 	return nodeInfoMap, err
 }
 
+func DeleteVXLAN(vxlan_name string) error {
+	deleteCmd := exec.Command("ip", "link", "delete", vxlan_name)
+	if err := deleteCmd.Run(); err != nil {
+		return fmt.Errorf("error deleting VXLAN device: %v", err)
+	}
+	return nil
+}
+
 func CreateVXLAN(vxlan_name string, vni string, remoteIP string, localIP string, dstPort string) error {
 	createCmd := exec.Command("ip", "link", "add", vxlan_name, "type", "vxlan", "id", vni, "remote", remoteIP, "local", localIP, "dstport", dstPort)
 	if err := createCmd.Run(); err != nil {
@@ -247,7 +255,7 @@ func ConnectBridgesBetweenNodes(c *ovs.Client, remoteName string, remoteIP strin
 
 }
 
-func CleanOVSBridges(c *ovs.Client) {
+func CleanOVSBridges(c *ovs.Client, nodesInfo map[string]string) {
 	// sudo ovs-ofctl del-flows br-name
 	if err := c.OpenFlow.DelFlows(common.HostBridge, nil); err != nil {
 		log.Infof("failed to delete OVS bridge %s flow at beginning: %v", common.HostBridge, err)
@@ -261,6 +269,14 @@ func CleanOVSBridges(c *ovs.Client) {
 	}
 	if err := c.VSwitch.DeleteBridge(common.DPUBridge); err != nil {
 		log.Infof("failed to clean OVS bridge %s at beginning: %v", common.DPUBridge, err)
+	}
+
+	// delete vxlans
+	for _, ip := range nodesInfo {
+		name := common.GetVxlanOutPortName(ip)
+		if err := DeleteVXLAN(name); err != nil {
+			log.Infof("failed to delete vxlan %s at beginning: %v", name, err)
+		}
 	}
 }
 
@@ -356,7 +372,7 @@ func New(cfg Config, topologyManager *metrics.TopologyManager, latencyHistograms
 	}
 
 	// Clean existing bridges created by kubedtn before
-	CleanOVSBridges(ovsClient)
+	CleanOVSBridges(ovsClient, nodesInfoMap)
 	// Init two OVS bridges on node before starting cni plugin
 	InitOVSBridges(ovsClient, nodesInfoMap, nodeIP)
 	log.Infof("OVS Bridges init finished")
