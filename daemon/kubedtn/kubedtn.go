@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 
 	"github.com/digitalocean/go-openvswitch/ovs"
 	v1 "github.com/y-young/kube-dtn/api/v1"
@@ -23,8 +24,6 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/homedir"
-
-	myovs "github.com/y-young/kube-dtn/daemon/ovs"
 
 	topologyclientv1 "github.com/y-young/kube-dtn/api/clientset/v1beta1"
 	"github.com/y-young/kube-dtn/common"
@@ -198,24 +197,44 @@ func GetNodesInfo(kClient kubernetes.Interface) (map[string]string, error) {
 	return nodeInfoMap, err
 }
 
+func CreateVXLAN(vxlan_name string, vni string, remoteIP string, localIP string, dstPort string) error {
+	createCmd := exec.Command("sudo", "ip", "link", "add", vxlan_name, "type", "vxlan", "id", vni, "remote", remoteIP, "local", localIP, "dstport", dstPort)
+	if err := createCmd.Run(); err != nil {
+		return fmt.Errorf("error creating VXLAN device: %v", err)
+	}
+
+	upCmd := exec.Command("sudo", "ip", "link", "set", vxlan_name, "up")
+	if err := upCmd.Run(); err != nil {
+		return fmt.Errorf("error bringing up VXLAN device: %v", err)
+	}
+	return nil
+}
+
 func ConnectBridgesBetweenNodes(c *ovs.Client, remoteName string, remoteIP string, portValue int, localIP string) {
-	// sudo ovs-vsctl add-port ovs-br-dpu vxlan-out-remote-name -- set interface vxlan-out-remote-name type=vxlan options:remote_ip=remoteIP options:dst_port=8472
 	portName := common.GetVxlanOutPortName(remoteIP)
+
+	if err := CreateVXLAN(portName, common.GetVxlanId(remoteIP, localIP), remoteIP, localIP, strconv.Itoa(portValue)); err != nil {
+		log.Fatalf("failed to create vxlan %s (remoteName %s, remoteIP %s): %v", portName, remoteName, remoteIP, err)
+	}
+
+	// sudo ovs-vsctl add-port ovs-br-dpu vxlan-out-remote-name
 	if err := c.VSwitch.AddPort(common.DPUBridge, portName); err != nil {
 		log.Fatalf("failed to add port %s (remoteName %s, remoteIP %s) on OVS bridge %s: %v", portName, remoteName, remoteIP, common.DPUBridge, err)
 	}
 	log.Infof("added port %s (remoteName %s, remoteIP %s) on OVS bridge %s", portName, remoteName, remoteIP, common.DPUBridge)
 
-	myVSwitch := myovs.MyVSwitchService{}
-	if err := myVSwitch.SetInterface(portName, myovs.InterfaceOptions{
-		Type:     ovs.InterfaceTypeVXLAN,
-		RemoteIP: remoteIP,
-		LocalIP:  localIP,
-		DstPort:  portValue,
-		Key:      common.GetVxlanId(remoteIP, localIP),
-	}); err != nil {
-		log.Fatalf("failed to set port %s interface: %v", portName, err)
-	}
+	// sudo ovs-vsctl add-port ovs-br-dpu vxlan-out-remote-name -- set interface vxlan-out-remote-name type=vxlan options:remote_ip=remoteIP options:dst_port=8472
+
+	// myVSwitch := myovs.MyVSwitchService{}
+	// if err := myVSwitch.SetInterface(portName, myovs.InterfaceOptions{
+	// 	Type:     ovs.InterfaceTypeVXLAN,
+	// 	RemoteIP: remoteIP,
+	// 	LocalIP:  localIP,
+	// 	DstPort:  portValue,
+	// 	Key:      common.GetVxlanId(remoteIP, localIP),
+	// }); err != nil {
+	// 	log.Fatalf("failed to set port %s interface: %v", portName, err)
+	// }
 
 	// sudo ovs-ofctl add-flow ovs-br-dpu in_port=vxlan-13,actions=output:patch-to-host
 	flow := &ovs.Flow{
